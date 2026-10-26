@@ -11,7 +11,7 @@ const response = (body: unknown, status = 200) =>
 async function identity(request: Request) {
   if (!process.env.DATABASE_URL || !process.env.BETTER_AUTH_SECRET) return null;
   const session = await getAuth().api.getSession({ headers: request.headers });
-  if (!session) return null;
+  if (!session?.user.emailVerified) return null;
   const profile = profileForEmail(session.user.email);
   return profile ? { userId: session.user.id, profile } : null;
 }

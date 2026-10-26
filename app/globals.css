@@ -3168,3 +3168,114 @@ svg {
 .tip-card .text-button {
   color: #566b44;
 }
+.demo-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 15px 0 5px;
+}
+.demo-play {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  background: #e6eedc;
+  border: 1px solid #d5e0c9;
+  border-radius: 7px;
+  color: #415c31;
+  min-height: 44px;
+  padding: 0 13px;
+  font-size: 11px;
+}
+.demo-controls > label {
+  flex: 1;
+  max-width: 155px;
+  margin-left: auto;
+}
+.demo-controls > label > span {
+  display: none;
+}
+.demo-controls select {
+  width: 100%;
+  min-height: 44px;
+  border: 1px solid #dde5d4;
+  border-radius: 7px;
+  background: white;
+  color: #526b40;
+  font-size: 10px;
+  padding: 0 7px;
+}
+.demo-reset {
+  min-height: 44px;
+  min-width: 38px;
+  display: grid;
+  place-items: center;
+  color: #5c704b;
+}
+.motion-note {
+  font-size: 10px !important;
+  line-height: 1.7;
+  color: #5b6c4a !important;
+  margin: 12px 0;
+}
+.animated-pose {
+  border: 1px solid #e0e8d6;
+  background: #f4f8ed;
+  border-radius: 10px;
+  padding: 9px;
+  margin: 15px 0;
+}
+.animated-pose > svg {
+  display: block;
+  height: 200px;
+  width: 100%;
+}
+.animated-pose > span {
+  display: block;
+  text-align: center;
+  color: #596e46;
+  font-size: 10px;
+  padding: 9px 4px;
+  line-height: 1.6;
+}
+.forgot-link {
+  display: flex;
+  margin: 0 auto;
+  color: #536d40;
+  font-size: 11px;
+}
+.email-pending {
+  font-size: 11px !important;
+  line-height: 1.8;
+  color: #6d795f !important;
+  margin-top: 14px;
+}
+.email-sent {
+  margin-top: 25px;
+  padding: 20px 12px;
+  border: 1px solid #dce7d2;
+  background: #f5f8f0;
+  border-radius: 10px;
+  color: #526b3e;
+}
+.email-sent > svg {
+  margin-bottom: 14px;
+}
+.email-sent h2 {
+  font-family: Georgia, serif;
+  font-size: 25px;
+  font-weight: 400;
+}
+.email-sent p {
+  font-size: 12px;
+  line-height: 1.8;
+  margin-top: 13px;
+}
+.email-continue {
+  margin: 25px 0 10px;
+}
+.auth-shield {
+  color: #6a8455;
+  display: block;
+  margin: 0 auto 22px;
+}

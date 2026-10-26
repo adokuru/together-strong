@@ -1,5 +1,6 @@
 import { Pool } from "pg";
 import { getMigrations } from "better-auth/db/migration";
+import { magicLink } from "better-auth/plugins/magic-link";
 if (process.env.MIGRATION_TARGET_CONFIRM !== "together-strong")
   throw Error(
     "Set MIGRATION_TARGET_CONFIRM=together-strong only after checking the new database target.",
@@ -9,8 +10,6 @@ const keys = [
   "BETTER_AUTH_SECRET",
   "DAVID_EMAIL",
   "MARY_EMAIL",
-  "DAVID_INVITE_CODE",
-  "MARY_INVITE_CODE",
 ];
 const missing = keys.filter((key) => !process.env[key]);
 if (missing.length)
@@ -39,6 +38,7 @@ try {
   const plan = await getMigrations({
     database: pool,
     emailAndPassword: { enabled: true },
+    plugins: [magicLink({ sendMagicLink: async () => {} })],
     rateLimit: { enabled: true, storage: "database" },
   });
   await plan.runMigrations();

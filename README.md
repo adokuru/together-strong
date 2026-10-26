@@ -6,7 +6,7 @@ Built with Next.js, React, TypeScript, PostgreSQL and Better Auth. No paid servi
 
 ## Run locally
 
-Use Node.js 24 LTS or later.
+Use Node.js 24 LTS.
 
 ```sh
 npm ci
@@ -22,7 +22,7 @@ For development, use `npm run dev`. The isolated local preview can run without c
 
 1. Create a **new** Vercel project in the approved personal workspace. Never reuse an existing project or its database.
 2. Provision a **new** Neon Free resource from Vercel Marketplace, plan `free_v3`, with Neon Auth disabled. Better Auth runs in this app and stores users, sessions and shared rate limits in the same Postgres database.
-3. Set the server-only keys listed in `.env.example`. Use separate invited email addresses. Generate a high-entropy Better Auth secret and separate private invitation codes using a secure process, only after credential setup is approved. Never put any of these values in source control or `NEXT_PUBLIC_*` variables.
+3. Set the server-only keys listed in `.env.example`. Use separate invited email addresses. Generate a high-entropy Better Auth secret and configure an approved Mailgun sender/API key, only after credential setup is approved. Never put any of these values in source control or `NEXT_PUBLIC_*` variables.
 4. Set `BETTER_AUTH_URL` in Production to the exact production origin. Keep it unset in Preview, as Better Auth infers the request origin. Pull Development env values to an ignored `.env.local` file without printing them.
 5. Apply the reviewed schema only to the new database:
 
@@ -30,10 +30,10 @@ For development, use `npm run dev`. The isolated local preview can run without c
 MIGRATION_TARGET_CONFIRM=together-strong node --env-file=.env.local scripts/migrate.mjs
 ```
 
-6. Deploy. Each person chooses their profile, selects first-time setup, and enters their invited email, private invitation code and a password of at least 12 characters. Deliver invitation codes privately. Open registration is denied, and uninvited emails cannot register. A code alone does not select another person's data. Existing-account creation is prevented by Better Auth's unique email constraint.
+6. Deploy. Each person chooses a profile and requests a private setup email. The single-use link expires in 15 minutes. Its confirmation page requires an explicit click so mail scanners do not consume it. Only after verifying the invited mailbox can the person choose a password of at least 12 characters. Direct password signup is disabled. Uninvited addresses cannot create accounts, and requesting a setup email does not claim an identity.
 7. Verify signup/signin, logout, two independent browser contexts, cross-device persistence, unauthorized requests, cross-profile access denial and concurrent-write conflicts on the actual database and deployment before claiming it is ready.
 
-Passwords are hashed by Better Auth. Sessions use its secure cookie handling. Every workout API request derives the user and allowed profile from the server-verified session; selecting a profile grants no access. A database row belongs to an authenticated user, and a revision check prevents one device silently replacing another device's newer log. Changes remain visibly unsaved after a failed request. The current app supports password sign-in; password reset email delivery is not configured. Keep credentials in a password manager, and arrange account recovery privately with the app owner if needed.
+Passwords are hashed by Better Auth. Sessions use its secure cookie handling. Every workout API request derives the user and allowed profile from the server-verified session; selecting a profile grants no access. A database row belongs to an authenticated user, and a revision check prevents one device silently replacing another device's newer log. Changes remain visibly unsaved after a failed request. Forgot Password returns the same generic response for unknown addresses. Reset links expire in 15 minutes, work once, and revoke existing sessions when successfully used. Password confirmation is checked before submitting. Mailgun link/open tracking is disabled for private auth emails. Mail delivery must be verified against the approved provider before claiming a setup email arrived.
 
 ## Workout conventions
 
@@ -41,7 +41,7 @@ Passwords are hashed by Better Auth. Sessions use its secure cookie handling. Ev
 - First two weeks: 1–2 sets per exercise. Week three onwards: the full listed plan. The clock begins at the first session.
 - **All kg entries are total held.** For two dumbbells, add their weights together. For one-arm rows/kickbacks or goblet squats, enter the single dumbbell's kg. No load is prefilled; whether the equipment's 20 kg is per dumbbell or total is not assumed.
 - One-sided exercises are logged as reps per side after completing both sides. Use the lower rep count if the sides differ.
-- Original SVG guides show simplified start/end positions. Text instructions explain range and breathing. No copied exercise imagery, tracking scripts or public workout logs are included.
+- Original SVG guides show simplified start/end positions and optional joint-based animation. Play/pause, slow speed and reset are provided. Limbs keep constant lengths; the RDL hinges at the hips and the moving heel stays grounded. Reduced-motion users see static positions until they explicitly choose Play. Text instructions explain range and breathing. No copied exercise imagery, tracking scripts or public workout logs are included.
 - Sessions are limited to one per local calendar day; repeated start or finish taps do not create duplicates. Today’s completed session can be reopened from history. Previous days remain a record of what was done.
 - Warm up, secure collars, leave 2–3 good reps in reserve, and stop with pain. Core exercises do not spot-reduce fat.
 
@@ -56,6 +56,14 @@ npm run test
 ```
 
 Tests expect the app running on port 3187. Set `TEST_BASE_URL` for another target. Set `PLAYWRIGHT_CHROMIUM_EXECUTABLE` to reuse an existing Chromium binary. Browser tests use isolated contexts and generic local sample entries. They do not pretend to verify an unprovisioned cloud database. No traces or login state are published.
+
+Run the opt-in real-database authentication checks only against the isolated app database:
+
+```sh
+RUN_DB_INTEGRATION=1 CONFIRM_TEST_DB=together-strong npm run test:integration
+```
+
+This starts a loopback-only test server on port 3191 with unique synthetic invited identities. Email setup/reset links go to an owner-only local `.private/` test outbox, never to real recipients. The suite verifies mailbox proof before account creation, setup-token replay denial, password confirmation, real database sync and isolation, generic Forgot Password responses, invalid/expired/used reset-token rejection, session revocation, old/new password behavior and logout. It removes only its precisely identified synthetic accounts, records and outbox. Real household accounts are not changed. The local outbox is hard-disabled on Vercel. A passing test outbox does **not** prove real Mailgun delivery. Optional `INTEGRATION_REMOTE_URL`, `INTEGRATION_DAVID_EMAIL` and `INTEGRATION_MARY_EMAIL` run the critical checks against a protected preview of this same app with matching synthetic email overrides. The preview must use the same isolated database. Existing short-lived Vercel OIDC authentication is added only to that preview origin; Deployment Protection stays enabled. The test refuses pre-existing test identities and leaves real accounts alone.
 
 Before pushing public source, inspect `git diff --cached` and run `node scripts/check-public-source.mjs`. `.env*`, `.vercel`, test screenshots, logs, browser state and build artifacts are ignored. The secret scan supplements manual review; it is not a guarantee.
 

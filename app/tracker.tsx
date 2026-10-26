@@ -29,6 +29,7 @@ import {
   CircleHelp,
 } from "lucide-react";
 import ExerciseVisual from "./exercise-visual";
+import AuthGate from "./auth-gate";
 import { authClient } from "@/lib/auth-client";
 import {
   CloudWorkoutStorage,
@@ -66,9 +67,11 @@ const timeText = (seconds: number) =>
 
 export default function Tracker({
   cloudConfigured,
+  emailConfigured,
   allowDemo,
 }: {
   cloudConfigured: boolean;
+  emailConfigured: boolean;
   allowDemo: boolean;
 }) {
   const [profile, setProfile] = useState<Profile | null>(null),
@@ -160,11 +163,23 @@ export default function Tracker({
       setProfile(p);
       setView(tab === "history" || tab === "progress" ? tab : "today");
       setHistorySession(null);
+      if (p)
+        void fetch("/api/account", { cache: "no-store" })
+          .then(async (response) => (response.ok ? response.json() : null))
+          .then((account) => {
+            if (
+              account?.profile === p &&
+              !account.needsPassword &&
+              profileRef.current === p
+            )
+              void load(p, false);
+          })
+          .catch(() => {});
     };
     navigate();
     window.addEventListener("hashchange", navigate);
     return () => window.removeEventListener("hashchange", navigate);
-  }, []);
+  }, [load]);
   const update = (next: WorkoutData) => {
     if (!profile) return;
     dataRef.current = next;
@@ -228,7 +243,18 @@ export default function Tracker({
       setError("Save or retry your changes before switching profiles.");
       return;
     }
-    if (!demo && authorized) await authClient.signOut();
+    if (!demo && authorized) {
+      try {
+        const result = await authClient.signOut();
+        if (result.error) {
+          setError("Could not sign out yet. Please try again in a moment.");
+          return;
+        }
+      } catch {
+        setError("Could not sign out. Check your connection and try again.");
+        return;
+      }
+    }
     setAuthorized(false);
     setDemo(false);
     setProfile(null);
@@ -376,6 +402,7 @@ export default function Tracker({
         <AuthGate
           profile={profile}
           configured={cloudConfigured}
+          emailEnabled={emailConfigured}
           allowDemo={allowDemo}
           onDemo={() => {
             setDemo(true);
@@ -1406,148 +1433,6 @@ function Brand({ compact = false }: { compact?: boolean }) {
         <span className="brand-period">.</span>
       </span>
     </div>
-  );
-}
-function AuthGate({
-  profile,
-  configured,
-  allowDemo,
-  onDemo,
-  onLogin,
-}: {
-  profile: Profile;
-  configured: boolean;
-  allowDemo: boolean;
-  onDemo: () => void;
-  onLogin: () => Promise<void>;
-}) {
-  const [signup, setSignup] = useState(false),
-    [busy, setBusy] = useState(false),
-    [error, setError] = useState("");
-  const submit = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    if (busy) return;
-    setBusy(true);
-    setError("");
-    const form = new FormData(e.currentTarget);
-    const email = String(form.get("email")),
-      password = String(form.get("password"));
-    try {
-      const result = signup
-        ? await authClient.signUp.email({
-            email,
-            password,
-            name: profile,
-            fetchOptions: {
-              headers: { "x-invite-code": String(form.get("invite")) },
-            },
-          })
-        : await authClient.signIn.email({ email, password });
-      if (result.error) {
-        setError(
-          result.error.message ??
-            "Could not sign in. Check your details and try again.",
-        );
-        return;
-      }
-      await onLogin();
-    } catch {
-      setError("Could not connect. Please try again.");
-    } finally {
-      setBusy(false);
-    }
-  };
-  return (
-    <section className="auth-card">
-      <span className="auth-avatar">{profile[0]}</span>
-      <div className="eyebrow">YOUR OWN LITTLE CORNER</div>
-      <h1>
-        Welcome{signup ? "" : " back"}, {profile}.
-      </h1>
-      <p>
-        {configured
-          ? "A private sign-in keeps your progress yours, on every device."
-          : "Your private training space is nearly ready. Secure cloud access is still being configured."}
-      </p>
-      {configured && (
-        <>
-          <form onSubmit={submit}>
-            <label>
-              Email address
-              <input
-                name="email"
-                type="email"
-                autoComplete="email"
-                required
-                placeholder="Your invited email"
-              />
-            </label>
-            <label>
-              Password
-              <input
-                name="password"
-                type="password"
-                minLength={12}
-                maxLength={128}
-                autoComplete={signup ? "new-password" : "current-password"}
-                required
-                placeholder="At least 12 characters"
-              />
-            </label>
-            {signup && (
-              <label>
-                Private invitation code
-                <input
-                  name="invite"
-                  type="password"
-                  required
-                  autoComplete="off"
-                  placeholder="The code supplied for your profile"
-                />
-              </label>
-            )}
-            {error && (
-              <p className="error-text" role="alert">
-                {error}
-              </p>
-            )}
-            <button className="dark-button" disabled={busy}>
-              {busy ? (
-                <LoaderCircle className="spin" size={18} />
-              ) : signup ? (
-                "Create my private account"
-              ) : (
-                "Sign in & get stronger"
-              )}
-              <ArrowRight size={17} />
-            </button>
-          </form>
-          <button
-            className="text-button auth-toggle"
-            onClick={() => {
-              setSignup(!signup);
-              setError("");
-            }}
-          >
-            {signup
-              ? "Already set up? Sign in"
-              : "First time? Set up your invited account"}
-          </button>
-        </>
-      )}
-      {allowDemo && (
-        <div className="demo-option">
-          <button className="text-button" onClick={onDemo}>
-            Try on this device <ArrowRight size={16} />
-          </button>
-          <small>Local preview only. This browser stores your logs.</small>
-        </div>
-      )}
-      <div className="auth-lock">
-        <LockKeyhole size={14} /> Profile selection is followed by private
-        sign-in.
-      </div>
-    </section>
   );
 }
 function ExerciseCard({

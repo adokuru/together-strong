@@ -1,8 +1,9 @@
 import { betterAuth, APIError } from "better-auth";
 import { nextCookies } from "better-auth/next-js";
 import { createAuthMiddleware } from "better-auth/api";
-import { createHash, timingSafeEqual } from "node:crypto";
+import { magicLink } from "better-auth/plugins/magic-link";
 import { db } from "./db";
+import { sendAuthMail } from "./mail";
 export function profileForEmail(email: string) {
   const normalized = email.toLowerCase();
   if (process.env.DAVID_EMAIL?.toLowerCase() === normalized) return "David";
@@ -18,31 +19,27 @@ const createAuth = () =>
       enabled: true,
       minPasswordLength: 12,
       maxPasswordLength: 128,
+      disableSignUp: true,
+      requireEmailVerification: true,
+      resetPasswordTokenExpiresIn: 900,
+      revokeSessionsOnPasswordReset: true,
+      sendResetPassword: async ({ user, url }) => {
+        await sendAuthMail({ to: user.email, url, kind: "reset" });
+      },
     },
     rateLimit: { enabled: true, storage: "database", window: 60, max: 20 },
     hooks: {
       before: createAuthMiddleware(async (ctx) => {
-        if (ctx.path !== "/sign-up/email") return;
-        const profile = profileForEmail(String(ctx.body?.email ?? ""));
-        const expected =
-          profile === "David"
-            ? process.env.DAVID_INVITE_CODE
-            : profile === "Mary"
-              ? process.env.MARY_INVITE_CODE
-              : undefined;
-        const actual = ctx.headers?.get("x-invite-code");
-        if (
-          !expected ||
-          !actual ||
-          !timingSafeEqual(
-            createHash("sha256").update(expected).digest(),
-            createHash("sha256").update(actual).digest(),
-          )
-        )
+        if (ctx.path === "/sign-up/email")
           throw new APIError("FORBIDDEN", {
             message:
-              "Use the private invitation code supplied for your profile.",
+              "Verify your private email setup link before choosing a password.",
           });
+        if (
+          ctx.path === "/sign-in/magic-link" &&
+          !profileForEmail(String(ctx.body?.email ?? ""))
+        )
+          return ctx.json({ status: true });
       }),
     },
     databaseHooks: {
@@ -51,15 +48,29 @@ const createAuth = () =>
           before: async (user) => {
             if (!profileForEmail(user.email))
               throw new APIError("FORBIDDEN", {
-                message:
-                  "This is a private app. Use your invited email address.",
+                message: "This is a private app.",
               });
             return { data: user };
           },
         },
       },
     },
-    plugins: [nextCookies()],
+    plugins: [
+      magicLink({
+        expiresIn: 900,
+        storeToken: "hashed",
+        sendMagicLink: async ({ email, url }) => {
+          const confirmation = new URL("/email-link", url);
+          confirmation.hash = new URLSearchParams({ verify: url }).toString();
+          await sendAuthMail({
+            to: email,
+            url: confirmation.toString(),
+            kind: "setup",
+          });
+        },
+      }),
+      nextCookies(),
+    ],
   });
 let instance: ReturnType<typeof createAuth> | undefined;
 export function getAuth() {

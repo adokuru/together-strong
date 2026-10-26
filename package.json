@@ -10,7 +10,8 @@
     "lint": "eslint .",
     "test": "playwright test",
     "db:migrate": "node --env-file=.env.local scripts/migrate.mjs",
-    "check:public": "node scripts/check-public-source.mjs"
+    "check:public": "node scripts/check-public-source.mjs",
+    "test:integration": "node --env-file=.env.local scripts/verify-integration.mjs"
   },
   "dependencies": {
     "better-auth": "^1.7.0",
