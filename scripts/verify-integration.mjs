@@ -118,7 +118,7 @@ async function signup(profile, email) {
   await page.getByLabel("Confirm password", { exact: true }).fill(password);
   await page.getByRole("button", { name: "Save password & start" }).click();
   await expect(
-    page.getByRole("heading", { name: `Let’s get stronger, ${profile}.` }),
+    page.getByRole("heading", { name: "Today’s workout" }),
   ).toBeVisible({ timeout: 15000 });
   ok(
     `${profile}: single-use email verification and user-chosen password setup`,
@@ -134,7 +134,7 @@ async function signin(profile, email, pwd) {
   await page.getByLabel("Password", { exact: true }).fill(pwd);
   await page.getByRole("button", { name: "Sign in & get stronger" }).click();
   await expect(
-    page.getByRole("heading", { name: `Let’s get stronger, ${profile}.` }),
+    page.getByRole("heading", { name: "Today’s workout" }),
   ).toBeVisible({ timeout: 15000 });
   return { context, page };
 }
@@ -176,14 +176,56 @@ try {
   const second = await signin("David", emails[0], password);
   ok("Independent browser password login");
   const page = david.page;
-  await page.getByRole("button", { name: "Start my workout" }).click();
-  await page.getByRole("button", { name: /First, a little warm-up/ }).click();
+  await page.getByRole("button", { name: "Start workout" }).click();
+  await page
+    .getByRole("button", { name: /A 5-minute warm-up is recommended/ })
+    .click();
   await page
     .getByRole("spinbutton", {
       name: "Dumbbell floor press set 1 reps",
       exact: true,
     })
     .fill("10");
+  await expect(
+    page.getByText("Synced securely", { exact: true }),
+  ).toBeVisible();
+  await page.route(
+    "**/api/workouts",
+    (route) =>
+      route.fulfill({
+        status: 503,
+        contentType: "application/json",
+        body: JSON.stringify({ error: "Temporary test failure" }),
+      }),
+    { times: 1 },
+  );
+  await page
+    .getByRole("spinbutton", {
+      name: "Dumbbell floor press set 1 reps",
+      exact: true,
+    })
+    .fill("11");
+  await expect(page.locator(".error-banner")).toBeVisible();
+  await expect(
+    page.getByRole("spinbutton", {
+      name: "Dumbbell floor press set 1 reps",
+      exact: true,
+    }),
+  ).toHaveValue("11");
+  await page.getByRole("button", { name: "Retry save", exact: true }).click();
+  await expect(
+    page.getByText("Synced securely", { exact: true }),
+  ).toBeVisible();
+  await expect(page.locator(".error-banner")).toHaveCount(0);
+  await page
+    .getByRole("spinbutton", {
+      name: "Dumbbell floor press set 1 reps",
+      exact: true,
+    })
+    .fill("10");
+  ok(
+    "Network-save failure preserves entries and explicit retry recovers cleanly",
+  );
   await page
     .getByRole("spinbutton", {
       name: "Dumbbell floor press set 1 kg total",
@@ -205,6 +247,9 @@ try {
   expect(payload.data.sessions[0].sets.press[0].done).toBe(true);
   ok("Completed set persists to real database and independent session");
   await second.page.reload();
+  await second.page
+    .getByRole("button", { name: "Resume workout", exact: true })
+    .click();
   await expect(
     second.page.getByRole("spinbutton", {
       name: "Dumbbell floor press set 1 reps",
@@ -470,7 +515,7 @@ try {
         .getByRole("button", { name: "Sign in & get stronger" })
         .click();
       await expect(
-        page.getByRole("heading", { name: `Let’s get stronger, ${profile}.` }),
+        page.getByRole("heading", { name: "Today’s workout" }),
       ).toBeVisible({ timeout: 20000 });
       return { context, page };
     };
@@ -489,6 +534,9 @@ try {
       "Deployed desktop and mobile profiles sign in with verified test identities",
     );
     const remotePage = remoteDavid.page;
+    await remotePage
+      .getByRole("button", { name: "Resume workout", exact: true })
+      .click();
     await remotePage
       .getByRole("spinbutton", {
         name: "Dumbbell floor press set 2 reps",
@@ -542,10 +590,68 @@ try {
       ).status(),
     ).toBe(409);
     ok("Deployed profile isolation and stale-write protection hold");
+    const maryPage = remoteMary.page;
+    await maryPage
+      .getByRole("combobox", { name: "Beginner sets per exercise" })
+      .selectOption("1");
+    await expect(
+      maryPage.getByText("Synced securely", { exact: true }),
+    ).toBeVisible();
+    await maryPage
+      .getByRole("button", { name: "Start warm-up", exact: true })
+      .click();
+    await maryPage
+      .getByRole("button", { name: "Start workout now", exact: true })
+      .click();
+    await expect(
+      maryPage.getByRole("heading", { name: "Log your sets" }),
+    ).toBeFocused();
+    await expect(
+      maryPage.getByRole("button", { name: "Finish workout", exact: true }),
+    ).toBeDisabled();
+    await maryPage
+      .getByRole("button", { name: "Save progress", exact: true })
+      .click();
+    await expect(
+      maryPage.getByText(
+        "Draft saved. No workout or streak has been recorded.",
+      ),
+    ).toBeVisible();
+    await maryPage
+      .getByRole("button", { name: "Save & pause", exact: true })
+      .click();
+    await maryPage.reload();
+    await maryPage
+      .getByRole("button", { name: "Open saved draft", exact: true })
+      .click();
+    await expect(
+      maryPage.getByRole("spinbutton", {
+        name: "One-arm dumbbell row set 1 reps",
+        exact: true,
+      }),
+    ).toBeEnabled();
+    const maryDraft = await (
+      await remoteMary.context.request.get(
+        remote + "/api/workouts?profile=Mary",
+      )
+    ).json();
+    expect(maryDraft.data.sessions).toHaveLength(1);
+    expect(maryDraft.data.sessions[0].completedAt).toBeUndefined();
+    expect(
+      Object.values(maryDraft.data.sessions[0].sets)
+        .flat()
+        .filter((set) => set.done),
+    ).toHaveLength(0);
+    expect(Object.values(maryDraft.data.sessions[0].sets).flat()).toHaveLength(
+      7,
+    );
+    ok(
+      "Deployed phone preference-save, optional warm-up and empty-draft save/reload/resume preserve zero workout count",
+    );
     await remotePage
       .locator(".exercise-card")
       .first()
-      .locator("summary")
+      .locator(".how-to > summary")
       .click();
     await remotePage
       .getByRole("button", { name: "Play Dumbbell floor press demonstration" })

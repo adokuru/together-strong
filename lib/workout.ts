@@ -6,12 +6,18 @@ export type Session = {
   startedAt: string;
   completedAt?: string;
   warmup: boolean;
+  warmupState?: "pending" | "underway" | "done" | "skipped";
+  status?: "draft" | "active" | "paused";
+  pausedAt?: string;
+  discardedAt?: string;
+  trainingStartedAt?: string;
   sets: Record<string, SetLog[]>;
 };
 export type WorkoutData = {
   version: 1;
   startedAt?: string;
   rampSets: 1 | 2;
+  activeSessionId?: string;
   sessions: Session[];
 };
 export type Exercise = {
@@ -140,6 +146,7 @@ export function localDate(d = new Date()) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 export function weekNumber(data: WorkoutData, now = new Date()) {
+  if (!data.sessions.some((s) => counts(s).done > 0)) return 1;
   if (!data.startedAt) return 1;
   const first = new Date(data.startedAt);
   return Math.max(
@@ -153,6 +160,8 @@ export function makeSession(profile: Profile, data: WorkoutData): Session {
     date: localDate(),
     startedAt: new Date().toISOString(),
     warmup: false,
+    warmupState: "pending",
+    status: "draft",
     sets: Object.fromEntries(
       routine(profile).map((e) => [
         e.id,
@@ -167,6 +176,28 @@ export function makeSession(profile: Profile, data: WorkoutData): Session {
 export function counts(session?: Session) {
   const sets = session ? Object.values(session.sets).flat() : [];
   return { total: sets.length, done: sets.filter((s) => s.done).length };
+}
+export function isCompleted(session?: Session) {
+  return Boolean(session?.completedAt) && counts(session).done > 0;
+}
+export function sessionStage(session?: Session) {
+  if (!session) return "new";
+  if (isCompleted(session)) return "complete";
+  if (counts(session).done === 0) return "draft";
+  return session.status === "paused" ? "paused" : "active";
+}
+export function activeSession(data: WorkoutData) {
+  const available = data.sessions.filter((s) => !s.discardedAt);
+  return (
+    available.find(
+      (s) =>
+        s.id === data.activeSessionId &&
+        (!isCompleted(s) ||
+          localDate(new Date(s.completedAt!)) === localDate()),
+    ) ??
+    [...available].reverse().find((s) => !isCompleted(s)) ??
+    available.find((s) => s.date === localDate())
+  );
 }
 export function validSet(set: SetLog, bodyweight = false) {
   return (
@@ -196,7 +227,7 @@ export function parseData(value: unknown): WorkoutData | null {
       s.id.length > 80 ||
       ids.has(s.id) ||
       !/^\d{4}-\d{2}-\d{2}$/.test(s.date) ||
-      days.has(s.date) ||
+      (!s.discardedAt && days.has(s.date)) ||
       isNaN(Date.parse(s.startedAt)) ||
       typeof s.warmup !== "boolean" ||
       !s.sets ||
@@ -204,7 +235,16 @@ export function parseData(value: unknown): WorkoutData | null {
     )
       return null;
     ids.add(s.id);
-    days.add(s.date);
+    if (!s.discardedAt) days.add(s.date);
+    if (s.status && !["draft", "active", "paused"].includes(s.status))
+      return null;
+    if (
+      s.warmupState &&
+      !["pending", "underway", "done", "skipped"].includes(s.warmupState)
+    )
+      return null;
+    for (const value of [s.pausedAt, s.discardedAt, s.trainingStartedAt])
+      if (value && isNaN(Date.parse(value))) return null;
     if (s.completedAt && isNaN(Date.parse(s.completedAt))) return null;
     for (const [id, sets] of Object.entries(s.sets)) {
       if (
@@ -227,6 +267,11 @@ export function parseData(value: unknown): WorkoutData | null {
           return null;
       }
     }
+    if (s.discardedAt && counts(s).done > 0) return null;
   }
   return JSON.parse(JSON.stringify(d));
+}
+
+export function sessionDay(s: Session) {
+  return isCompleted(s) ? localDate(new Date(s.completedAt!)) : s.date;
 }

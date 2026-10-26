@@ -8,9 +8,7 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
-  Clock3,
   Dumbbell,
-  Flame,
   House,
   Leaf,
   LoaderCircle,
@@ -25,11 +23,13 @@ import {
   Timer,
   TrendingUp,
   X,
+  Undo2,
   CalendarDays,
   CircleHelp,
 } from "lucide-react";
 import ExerciseVisual from "./exercise-visual";
 import AuthGate from "./auth-gate";
+import WorkoutToday from "./workout-today";
 import { authClient } from "@/lib/auth-client";
 import {
   CloudWorkoutStorage,
@@ -38,6 +38,10 @@ import {
 } from "@/lib/storage";
 import {
   counts,
+  activeSession,
+  isCompleted,
+  sessionStage,
+  sessionDay,
   emptyData,
   Exercise,
   localDate,
@@ -89,6 +93,9 @@ export default function Tracker({
     [month, setMonth] = useState(
       () => new Date(new Date().getFullYear(), new Date().getMonth(), 1),
     );
+  const [workoutOpened, setWorkoutOpened] = useState(false);
+  const [discardUndoId, setDiscardUndoId] = useState<string | null>(null);
+  const entryOpenedAt = useRef(0);
   const profileRef = useRef<Profile | null>(null);
   const dataRef = useRef(data),
     revision = useRef(0),
@@ -156,6 +163,8 @@ export default function Tracker({
       const p = name === "David" || name === "Mary" ? name : null;
       if (profileRef.current !== p) {
         setAuthorized(false);
+        setWorkoutOpened(false);
+        setDiscardUndoId(null);
         setError("");
         setTimer((t) => ({ ...t, visible: false, running: false }));
         profileRef.current = p;
@@ -216,9 +225,11 @@ export default function Tracker({
     window.addEventListener("beforeunload", guard);
     return () => window.removeEventListener("beforeunload", guard);
   }, []);
-  const retry = () => {
+  const retry = async () => {
     failed.current = false;
     update(dataRef.current);
+    await queue.current;
+    if (!failed.current) setError("");
   };
   const editSession = (id: string, fn: (s: Session) => Session) => {
     update({
@@ -226,8 +237,10 @@ export default function Tracker({
       sessions: dataRef.current.sessions.map((s) => (s.id === id ? fn(s) : s)),
     });
   };
-  const session = data.sessions.find((s) => s.date === localDate());
-  const completed = data.sessions.filter((s) => s.completedAt);
+  const session = activeSession(data);
+  const completed = data.sessions.filter(
+    (s) => !s.discardedAt && isCompleted(s),
+  );
   const tally = counts(session);
   const week = weekNumber(data);
   const choose = (p: Profile) => {
@@ -262,35 +275,109 @@ export default function Tracker({
     setTimer((t) => ({ ...t, visible: false, running: false }));
     route(null);
   };
-  const start = () => {
-    if (
-      !profile ||
-      dataRef.current.sessions.some((s) => s.date === localDate())
-    )
+  const start = (warmupState?: NonNullable<Session["warmupState"]>) => {
+    if (!profile) return;
+    const existing = activeSession(dataRef.current);
+    if (isCompleted(existing)) {
+      setWorkoutOpened(false);
       return;
-    const next = makeSession(profile, dataRef.current);
-    update({
-      ...dataRef.current,
-      startedAt: dataRef.current.startedAt ?? next.startedAt,
-      sessions: [...dataRef.current.sessions, next],
-    });
+    }
+    const current = existing ?? makeSession(profile, dataRef.current);
+    const next = {
+      ...current,
+      completedAt: undefined,
+      status: "active" as const,
+      pausedAt: undefined,
+      ...(warmupState ? { warmupState, warmup: warmupState === "done" } : {}),
+    };
+    const unchanged =
+      existing &&
+      !warmupState &&
+      existing.status === "active" &&
+      !existing.pausedAt &&
+      !existing.completedAt &&
+      dataRef.current.activeSessionId === existing.id;
+    if (!unchanged)
+      update({
+        ...dataRef.current,
+        activeSessionId: next.id,
+        sessions: existing
+          ? dataRef.current.sessions.map((s) => (s.id === next.id ? next : s))
+          : [...dataRef.current.sessions, next],
+      });
+    entryOpenedAt.current = performance.now();
+    setWorkoutOpened(true);
     setExpanded(routine(profile)[0].id);
   };
-  const finish = () => {
-    const current = dataRef.current.sessions.find(
-      (s) => s.date === localDate(),
-    );
+  const saveProgress = async () => {
+    await queue.current;
+    if (!failed.current)
+      setNotice(
+        counts(activeSession(dataRef.current)).done
+          ? "Progress saved. Your completed sets are preserved."
+          : "Draft saved. No workout or streak has been recorded.",
+      );
+  };
+  const pauseSession = async () => {
+    const current = activeSession(dataRef.current);
+    if (!current || isCompleted(current)) return;
+    editSession(current.id, (s) => ({
+      ...s,
+      status: counts(s).done ? "paused" : "draft",
+      pausedAt: new Date().toISOString(),
+    }));
+    await queue.current;
+    if (!failed.current) {
+      setWorkoutOpened(false);
+      setTimer((t) => ({ ...t, running: false, visible: false }));
+      setNotice(
+        counts(current).done
+          ? "Session paused. Resume whenever you’re ready."
+          : "Draft saved. No workout has been logged.",
+      );
+    }
+  };
+  const discardDraft = () => {
+    const current = activeSession(dataRef.current);
+    if (!current || counts(current).done) return;
+    editSession(current.id, (s) => ({
+      ...s,
+      discardedAt: new Date().toISOString(),
+    }));
+    setDiscardUndoId(current.id);
+    setWorkoutOpened(false);
+  };
+  const restoreDraft = (id: string) => {
+    const draft = dataRef.current.sessions.find((s) => s.id === id);
+    if (!draft) return;
     if (
-      !current ||
-      current.completedAt ||
-      !counts(current).done ||
-      !current.warmup
-    )
+      dataRef.current.sessions.some(
+        (s) => s.id !== id && !s.discardedAt && s.date === draft.date,
+      )
+    ) {
+      setNotice(
+        "Your draft is retained. Discard the newer empty draft before restoring this one.",
+      );
       return;
+    }
+    update({
+      ...dataRef.current,
+      activeSessionId: id,
+      sessions: dataRef.current.sessions.map((s) =>
+        s.id === id ? { ...s, discardedAt: undefined } : s,
+      ),
+    });
+    setDiscardUndoId(null);
+    setWorkoutOpened(false);
+  };
+  const finish = () => {
+    const current = activeSession(dataRef.current);
+    if (!current || isCompleted(current) || !counts(current).done) return;
     editSession(current.id, (s) => ({
       ...s,
       completedAt: new Date().toISOString(),
     }));
+    setWorkoutOpened(false);
     setFinishConfirm(false);
     setTimer((t) => ({ ...t, visible: false, running: false }));
     setNotice("Workout saved. A little stronger than yesterday.");
@@ -298,15 +385,10 @@ export default function Tracker({
   const weekStart = new Date();
   weekStart.setHours(0, 0, 0, 0);
   weekStart.setDate(weekStart.getDate() - ((weekStart.getDay() + 6) % 7));
-  const weekDays = Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(weekStart);
-    d.setDate(d.getDate() + i);
-    return d;
-  });
   const thisWeek = completed.filter(
     (s) =>
-      s.date >= localDate(weekStart) &&
-      s.date <= localDate(new Date(weekStart.getTime() + 6 * 86400000)),
+      sessionDay(s) >= localDate(weekStart) &&
+      sessionDay(s) <= localDate(new Date(weekStart.getTime() + 6 * 86400000)),
   ).length;
   const totalSets = completed.reduce((sum, s) => sum + counts(s).done, 0);
 
@@ -482,6 +564,20 @@ export default function Tracker({
             })}
           </span>
           <div className="topbar-right">
+            <button
+              className="header-timer-button"
+              aria-label="Rest timer"
+              onClick={() =>
+                setTimer({
+                  remaining: 120,
+                  running: false,
+                  duration: 120,
+                  visible: true,
+                })
+              }
+            >
+              <Timer size={20} />
+            </button>
             <span className={`save-status ${save}`} role="status">
               {save === "saving" ? (
                 <LoaderCircle size={13} className="spin" />
@@ -530,7 +626,9 @@ export default function Tracker({
             </div>
           ) : (
             <>
-              <div className="page-heading">
+              <div
+                className={`page-heading ${view === "today" ? "workout-heading-hidden" : ""}`}
+              >
                 <div>
                   <div className="eyebrow">
                     {view === "today"
@@ -568,355 +666,86 @@ export default function Tracker({
                 </button>
               </div>
               {view === "today" && (
-                <div className="dashboard-grid">
-                  <div className="workout-column">
-                    <section className="workout-hero">
-                      <div className="hero-content">
-                        <span className="hero-label">
-                          <span className="live-dot" /> YOUR FULL-BODY SESSION
-                        </span>
-                        <h2>
-                          {profile === "David" ? (
-                            <>
-                              Build strength.
-                              <br />
-                              Find your rhythm.
-                            </>
-                          ) : (
-                            <>
-                              Strong back.
-                              <br />
-                              Stronger you.
-                            </>
-                          )}
-                        </h2>
-                        <div className="hero-meta">
-                          <span>
-                            <Clock3 size={15} /> 40–50 min
-                          </span>
-                          <span>
-                            <Dumbbell size={16} /> 7 exercises
-                          </span>
-                          <span>No bench</span>
-                        </div>
-                        <button
-                          className={`primary-button ${session ? "hero-session" : ""}`}
-                          onClick={() => {
-                            if (!session) start();
-                            else
-                              document
-                                .getElementById("exercise-list")
-                                ?.scrollIntoView({
-                                  behavior: "smooth",
-                                  block: "start",
-                                });
-                          }}
-                        >
-                          {session?.completedAt ? (
-                            <>
-                              <Check size={18} /> Workout complete
-                            </>
-                          ) : session ? (
-                            <>
-                              <Play size={16} /> Continue workout
-                            </>
-                          ) : (
-                            <>
-                              Start my workout <ArrowRight size={18} />
-                            </>
-                          )}
-                        </button>
-                      </div>
-                      <div className="hero-art" aria-hidden="true">
-                        <div className="hero-circle" />
-                        <Dumbbell strokeWidth={1.2} />
-                        <Sparkles className="hero-spark" />
-                      </div>
-                    </section>
-                    <div className="phase-card">
-                      <span className="phase-icon">
-                        <Sparkles size={21} />
-                      </span>
-                      <div>
-                        <strong>
-                          {week <= 2
-                            ? "Start easy. Build a lasting habit."
-                            : "Your full plan. Your steady progress."}
-                        </strong>
-                        <p>
-                          {week <= 2
-                            ? `Week ${week} · Choose 1–2 sets per exercise for your first two weeks.`
-                            : "Week 3+ · Full sets are ready. Keep 2–3 good reps in reserve."}
-                        </p>
-                      </div>
-                      {!session && week <= 2 && (
-                        <label className="sets-select">
-                          <span>Sets</span>
-                          <select
-                            value={data.rampSets}
-                            aria-label="Beginner sets per exercise"
-                            onChange={(e) =>
-                              update({
-                                ...dataRef.current,
-                                rampSets: Number(e.target.value) as 1 | 2,
-                              })
-                            }
-                          >
-                            <option value="1">1 set</option>
-                            <option value="2">2 sets</option>
-                          </select>
-                        </label>
-                      )}
-                    </div>
-                    <div className="section-heading" id="exercise-list">
-                      <div>
-                        <h2>
-                          Your workout <span>07</span>
-                        </h2>
-                        <p>
-                          {profile === "David"
-                            ? "Chest & arms emphasis · full-body foundation"
-                            : "Back & arms emphasis · full-body foundation"}
-                        </p>
-                      </div>
-                      {session && (
-                        <span className="count-pill">
-                          {tally.done}/{tally.total} sets
-                        </span>
-                      )}
-                    </div>
-                    {session && (
-                      <div
-                        className="session-progress"
-                        role="progressbar"
-                        aria-valuemin={0}
-                        aria-valuemax={tally.total}
-                        aria-valuenow={tally.done}
-                        aria-label={`${tally.done} of ${tally.total} sets completed`}
-                      >
-                        <span
-                          style={{
-                            width: `${tally.total ? (tally.done / tally.total) * 100 : 0}%`,
-                          }}
-                        />
-                      </div>
-                    )}
-                    <button
-                      className={`warmup-card ${session?.warmup ? "done" : ""}`}
-                      disabled={!session || Boolean(session.completedAt)}
-                      onClick={() =>
-                        session &&
-                        editSession(session.id, (s) => ({
-                          ...s,
-                          warmup: !s.warmup,
-                        }))
-                      }
-                    >
-                      <span className="warmup-icon">
-                        {session?.warmup ? (
-                          <Check size={20} />
-                        ) : (
-                          <Flame size={20} />
-                        )}
-                      </span>
-                      <span>
-                        <strong>First, a little warm-up</strong>
-                        <small>
-                          5 min · Easy marching, arm circles & unloaded practice
-                          reps
-                        </small>
-                      </span>
-                      <span className="warmup-check">
-                        {session?.warmup ? <Check size={16} /> : "5′"}
-                      </span>
-                    </button>
-                    <div className="exercises">
-                      {routine(profile).map((exercise, index) => (
-                        <ExerciseCard
-                          key={exercise.id}
-                          exercise={exercise}
-                          index={index}
-                          expanded={expanded === exercise.id}
-                          onExpand={() =>
-                            setExpanded(
-                              expanded === exercise.id ? null : exercise.id,
-                            )
-                          }
-                          session={session}
-                          plannedSets={
-                            week <= 2 ? data.rampSets : exercise.sets
-                          }
-                          onChange={(setIndex, patch) => {
-                            if (!session || session.completedAt) return;
-                            editSession(session.id, (s) => ({
-                              ...s,
-                              sets: {
-                                ...s.sets,
-                                [exercise.id]: s.sets[exercise.id].map(
-                                  (set, i) =>
-                                    i === setIndex ? { ...set, ...patch } : set,
-                                ),
-                              },
-                            }));
-                          }}
-                          onRest={() => startTimer(exercise.rest)}
-                          onNotice={setNotice}
-                        />
-                      ))}
-                    </div>
-                    {session && !session.completedAt && (
-                      <div className="finish-section">
-                        <p>
-                          {tally.done === tally.total && session.warmup
-                            ? "You showed up. You put in the work."
-                            : !session.warmup
-                              ? "Complete your warm-up before finishing."
-                              : `${tally.done} sets in. Every controlled rep counts.`}
-                        </p>
-                        <button
-                          className="dark-button"
-                          disabled={
-                            !tally.done ||
-                            !session.warmup ||
-                            save === "error" ||
-                            save === "saving"
-                          }
-                          onClick={() =>
-                            tally.done === tally.total
-                              ? finish()
-                              : setFinishConfirm(true)
-                          }
-                        >
-                          {tally.done === tally.total
-                            ? "Finish & save workout"
-                            : "Finish early & save"}
-                          <Check size={18} />
-                        </button>
-                      </div>
-                    )}
-                    {session?.completedAt && (
-                      <div className="completion-card">
-                        <CheckCheck size={28} />
-                        <h3>You did something good for yourself.</h3>
-                        <p>
-                          {tally.done} sets saved · Rest, recover, and come back
-                          stronger.
-                        </p>
-                        <button
-                          className="text-button"
-                          onClick={() => route(profile, "history")}
-                        >
-                          See your history <ArrowRight size={16} />
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                  <aside className="right-column">
-                    <section className="week-card">
-                      <div className="section-heading">
-                        <h3>This week</h3>
-                        <span className="mini-icon">
-                          <CalendarDays size={17} />
-                        </span>
-                      </div>
-                      <div className="week-score">
-                        <strong>
-                          {thisWeek}
-                          <span>/ 3</span>
-                        </strong>
-                        <span>
-                          workouts
-                          <br />
-                          completed
-                        </span>
-                      </div>
-                      <div className="week-strip">
-                        {weekDays.map((day, i) => {
-                          const key = localDate(day);
-                          const done = completed.some((s) => s.date === key);
-                          return (
-                            <div
-                              className={`week-day ${key === localDate() ? "today" : ""} ${done ? "completed" : ""}`}
-                              key={key}
-                            >
-                              <span>
-                                {["M", "T", "W", "T", "F", "S", "S"][i]}
-                              </span>
-                              <span className="day-circle">
-                                {done ? <Check size={15} /> : day.getDate()}
-                              </span>
-                              <span
-                                className={
-                                  i % 2 === 0 && i < 5 ? "schedule-dot" : ""
-                                }
-                              />
-                            </div>
+                <WorkoutToday
+                  profile={profile}
+                  data={data}
+                  session={session}
+                  week={week}
+                  opened={workoutOpened}
+                  save={save}
+                  demo={demo}
+                  thisWeek={thisWeek}
+                  undoId={discardUndoId}
+                  onOpen={() => start()}
+                  onWarmup={(state) => start(state)}
+                  onSave={() => void saveProgress()}
+                  onPause={() => void pauseSession()}
+                  onFinish={() => setFinishConfirm(true)}
+                  onDiscard={discardDraft}
+                  onUndo={() => discardUndoId && restoreDraft(discardUndoId)}
+                  onSets={(count) =>
+                    update({ ...dataRef.current, rampSets: count })
+                  }
+                  onHistory={() => route(profile, "history")}
+                  renderExercises={() =>
+                    routine(profile).map((exercise, index) => (
+                      <ExerciseCard
+                        key={exercise.id}
+                        exercise={exercise}
+                        index={index}
+                        expanded={expanded === exercise.id}
+                        onExpand={() =>
+                          (exercise.id !== routine(profile)[0].id ||
+                            performance.now() - entryOpenedAt.current > 350) &&
+                          setExpanded(
+                            expanded === exercise.id ? null : exercise.id,
+                          )
+                        }
+                        session={session}
+                        plannedSets={week <= 2 ? data.rampSets : exercise.sets}
+                        onChange={(setIndex, patch) => {
+                          if (!session || isCompleted(session)) return;
+                          const hadActivity = dataRef.current.sessions.some(
+                            (s) => counts(s).done > 0,
                           );
-                        })}
-                      </div>
-                      <p className="week-caption">
-                        <span className="schedule-dot" /> Suggested: Mon · Wed ·
-                        Fri
-                      </p>
-                      <div className="week-note">
-                        {thisWeek
-                          ? "Keep the momentum. Recovery days count, too."
-                          : "A fresh week. A fresh chance to show up."}
-                      </div>
-                    </section>
-                    <section className="habit-card">
-                      <span className="eyebrow">YOUR JOURNEY SO FAR</span>
-                      <div className="habit-stats">
-                        <div>
-                          <span className="stat-icon">
-                            <Dumbbell size={19} />
-                          </span>
-                          <strong>{completed.length}</strong>
-                          <span>workouts</span>
-                        </div>
-                        <div>
-                          <span className="stat-icon">
-                            <CheckCheck size={19} />
-                          </span>
-                          <strong>{totalSets}</strong>
-                          <span>sets done</span>
-                        </div>
-                      </div>
-                      <a href={`#${profile}/progress`}>
-                        See your progress <ArrowRight size={16} />
-                      </a>
-                    </section>
-                    <section className="tip-card">
-                      <div className="tip-top">
-                        <Leaf size={22} />
-                        <span>STRONGER, SAFELY</span>
-                      </div>
-                      <h3>
-                        Leave a little
-                        <br />
-                        in the tank.
-                      </h3>
-                      <p>
-                        Finish each set with 2–3 good reps still in you. Control
-                        comes before more weight.
-                      </p>
-                      <button
-                        className="text-button"
-                        onClick={() => setGuide(true)}
-                      >
-                        A few helpful tips <ArrowRight size={15} />
-                      </button>
-                    </section>
-                    <div className="equipment-note">
-                      <Dumbbell size={16} />
-                      <p>
-                        Adjustable dumbbells.
-                        <br />
-                        Floor space. You’ve got this.
-                      </p>
-                    </div>
-                  </aside>
-                </div>
+                          const nextSessions = dataRef.current.sessions.map(
+                            (s) =>
+                              s.id === session.id
+                                ? {
+                                    ...s,
+                                    completedAt: undefined,
+                                    status: "active" as const,
+                                    trainingStartedAt: patch.done
+                                      ? (s.trainingStartedAt ??
+                                        new Date().toISOString())
+                                      : s.trainingStartedAt,
+                                    sets: {
+                                      ...s.sets,
+                                      [exercise.id]: s.sets[exercise.id].map(
+                                        (set, i) =>
+                                          i === setIndex
+                                            ? { ...set, ...patch }
+                                            : set,
+                                      ),
+                                    },
+                                  }
+                                : s,
+                          );
+                          update({
+                            ...dataRef.current,
+                            startedAt:
+                              !hadActivity && patch.done
+                                ? new Date().toISOString()
+                                : dataRef.current.startedAt,
+                            sessions: nextSessions,
+                          });
+                        }}
+                        onRest={() => startTimer(exercise.rest)}
+                        onNotice={setNotice}
+                      />
+                    ))
+                  }
+                />
               )}
               {view === "history" && (
                 <div className="history-grid">
@@ -987,13 +816,15 @@ export default function Tracker({
                               i + 1,
                             ),
                           );
-                          const s = data.sessions.find((s) => s.date === date);
+                          const s = data.sessions.find(
+                            (s) => !s.discardedAt && sessionDay(s) === date,
+                          );
                           return (
                             <button
                               key={date}
                               disabled={!s}
-                              className={`${s?.completedAt ? "calendar-done" : ""} ${date === localDate() ? "calendar-today" : ""}`}
-                              aria-label={`${formatDate(date)}${s?.completedAt ? ", completed workout" : s ? ", in progress" : ", no workout"}`}
+                              className={`${isCompleted(s) ? "calendar-done" : ""} ${date === localDate() ? "calendar-today" : ""}`}
+                              aria-label={`${formatDate(date)}${isCompleted(s) ? ", completed workout" : s ? ", in progress" : ", no workout"}`}
                               onClick={() => s && setHistorySession(s)}
                             >
                               {i + 1}
@@ -1015,7 +846,7 @@ export default function Tracker({
                         {completed.length} completed
                       </span>
                     </div>
-                    {!data.sessions.length ? (
+                    {!data.sessions.filter((s) => !s.discardedAt).length ? (
                       <Empty
                         icon={<CalendarDays size={30} />}
                         title="Your story starts with one session."
@@ -1024,39 +855,62 @@ export default function Tracker({
                         label="Go to my workout"
                       />
                     ) : (
-                      [...data.sessions].reverse().map((s) => (
-                        <button
-                          className="history-item"
-                          key={s.id}
-                          onClick={() => setHistorySession(s)}
-                        >
-                          <span
-                            className={`history-icon ${s.completedAt ? "finished" : ""}`}
+                      [...data.sessions]
+                        .filter((s) => !s.discardedAt)
+                        .reverse()
+                        .map((s) => (
+                          <button
+                            className="history-item"
+                            key={s.id}
+                            onClick={() => setHistorySession(s)}
                           >
-                            {s.completedAt ? (
-                              <Check size={19} />
-                            ) : (
-                              <Dumbbell size={19} />
-                            )}
-                          </span>
-                          <span>
-                            <strong>
-                              {formatDate(s.date, {
-                                weekday: "short",
-                                day: "numeric",
-                                month: "short",
-                              })}
-                            </strong>
-                            <small>
-                              {s.completedAt
-                                ? "Full-body session"
-                                : "In progress"}{" "}
-                              · {counts(s).done}/{counts(s).total} sets
-                            </small>
-                          </span>
-                          <ArrowRight size={18} />
-                        </button>
-                      ))
+                            <span
+                              className={`history-icon ${isCompleted(s) ? "finished" : ""}`}
+                            >
+                              {isCompleted(s) ? (
+                                <Check size={19} />
+                              ) : (
+                                <Dumbbell size={19} />
+                              )}
+                            </span>
+                            <span>
+                              <strong>
+                                {formatDate(s.date, {
+                                  weekday: "short",
+                                  day: "numeric",
+                                  month: "short",
+                                })}
+                              </strong>
+                              <small>
+                                {isCompleted(s)
+                                  ? "Completed workout"
+                                  : sessionStage(s) === "draft"
+                                    ? "Saved draft · no workout logged"
+                                    : sessionStage(s) === "paused"
+                                      ? "Paused session"
+                                      : "In progress"}{" "}
+                                · {counts(s).done}/{counts(s).total} sets
+                              </small>
+                            </span>
+                            <ArrowRight size={18} />
+                          </button>
+                        ))
+                    )}
+                    {data.sessions.some((s) => s.discardedAt) && (
+                      <details className="discarded-drafts">
+                        <summary>Recover discarded drafts</summary>
+                        {data.sessions
+                          .filter((s) => s.discardedAt)
+                          .map((s) => (
+                            <button
+                              key={s.id}
+                              onClick={() => restoreDraft(s.id)}
+                            >
+                              Restore draft from {formatDate(s.date)}{" "}
+                              <Undo2 size={15} />
+                            </button>
+                          ))}
+                      </details>
                     )}
                   </section>
                 </div>
@@ -1201,22 +1055,6 @@ export default function Tracker({
           <span>Profile</span>
         </button>
       </nav>
-      {!timer.visible && view === "today" && (
-        <button
-          className="timer-launch"
-          onClick={() =>
-            setTimer({
-              remaining: 120,
-              running: false,
-              duration: 120,
-              visible: true,
-            })
-          }
-        >
-          <Timer size={19} />
-          <span>Rest timer</span>
-        </button>
-      )}
       {timer.visible && (
         <section className="timer-panel" aria-label="Rest timer">
           <div className="timer-heading">
@@ -1380,10 +1218,25 @@ export default function Tracker({
           onClose={() => setHistorySession(null)}
         >
           <p className="modal-lead">
-            {historySession.completedAt ? "Completed" : "In progress"} ·{" "}
+            {isCompleted(historySession) ? "Completed" : "Saved session"} ·{" "}
             {counts(historySession).done} of {counts(historySession).total} sets
             · Weight is total held.
           </p>
+          {!isCompleted(historySession) && (
+            <button
+              className="dark-button"
+              onClick={() => {
+                const id = historySession.id;
+                update({ ...dataRef.current, activeSessionId: id });
+                setHistorySession(null);
+                setWorkoutOpened(true);
+                setExpanded(routine(profile)[0].id);
+                route(profile, "today");
+              }}
+            >
+              Resume this session <Play size={17} />
+            </button>
+          )}
           {routine(profile).map((e) => (
             <div className="history-detail" key={e.id}>
               <strong>{e.name}</strong>
@@ -1406,6 +1259,7 @@ export default function Tracker({
                   const id = historySession.id;
                   editSession(id, (s) => ({ ...s, completedAt: undefined }));
                   setHistorySession(null);
+                  setWorkoutOpened(true);
                   if (historySession.date === localDate())
                     route(profile, "today");
                   setNotice(
@@ -1502,15 +1356,15 @@ function ExerciseCard({
             </summary>
             <ExerciseVisual id={e.id} name={e.name} />
           </details>
-          <div className="exercise-instructions">
-            <span>
-              <Dumbbell size={17} />
-            </span>
-            <div>
-              <strong>{e.cue}</strong>
-              <p>{e.instructions}</p>
-            </div>
-          </div>
+          <details className="technique-text">
+            <summary>
+              <span>{e.cue}</span>
+              <span>
+                Form tips <ChevronDown size={15} />
+              </span>
+            </summary>
+            <p>{e.instructions}</p>
+          </details>
           {!sets ? (
             <div className="start-hint">
               <Play size={14} /> Start your workout above to log your sets.
@@ -1543,7 +1397,7 @@ function ExerciseCard({
                     step="1"
                     placeholder={e.reps}
                     value={set.reps}
-                    disabled={Boolean(session?.completedAt)}
+                    disabled={isCompleted(session)}
                     onChange={(ev) =>
                       onChange(i, { reps: ev.target.value, done: false })
                     }
@@ -1560,7 +1414,7 @@ function ExerciseCard({
                       step="any"
                       placeholder="—"
                       value={set.kg}
-                      disabled={Boolean(session?.completedAt)}
+                      disabled={isCompleted(session)}
                       onChange={(ev) =>
                         onChange(i, { kg: ev.target.value, done: false })
                       }
@@ -1570,7 +1424,7 @@ function ExerciseCard({
                     className="set-checkbox"
                     aria-label={`${set.done ? "Undo" : "Complete"} ${e.name} set ${i + 1}`}
                     aria-pressed={set.done}
-                    disabled={Boolean(session?.completedAt)}
+                    disabled={isCompleted(session)}
                     onClick={() => {
                       if (!set.done && !validSet(set, e.bodyweight)) {
                         onNotice(

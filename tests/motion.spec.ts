@@ -25,8 +25,11 @@ test("joint motion preserves limb lengths and grounded contacts", () => {
       }
       if (e.id === "heel")
         expect(pose.legs[1].split(" ").at(-1)!.split(",")[1]).toBe("122.000");
-      if (e.id === "rdl")
-        expect(pose.body.split(" ")[1].split(",")[1]).toBe("78.000");
+      if (e.id === "rdl") {
+        const hipHeight = Number(pose.body.split(" ")[1].split(",")[1]);
+        expect(hipHeight).toBeGreaterThanOrEqual(71);
+        expect(hipHeight).toBeLessThanOrEqual(73);
+      }
     }
   }
 });
@@ -36,32 +39,46 @@ test("exercise demo play, pause, slow speed and reset controls", async ({
   await page.goto("/");
   await page.getByRole("button", { name: "Choose David" }).click();
   await page.getByRole("button", { name: "Try on this device" }).click();
-  await page.locator(".exercise-card").first().locator("summary").click();
-  await expect(page.locator('[data-animated="true"]')).toHaveCount(0);
+  await page
+    .getByRole("button", { name: "Start workout", exact: true })
+    .click();
+  await page
+    .locator(".exercise-card")
+    .first()
+    .locator(".how-to > summary")
+    .click();
+  await expect(
+    page.getByRole("button", { name: /^Play .* demonstration$/ }),
+  ).toHaveAttribute("aria-pressed", "false");
   await page
     .getByRole("button", { name: "Play Dumbbell floor press demonstration" })
     .click();
-  const limbs = page.locator('[data-animated="true"] polyline');
-  const initial = await limbs.last().getAttribute("points");
+  const limbs = page.locator('[data-animated="true"]');
+  const initial = await limbs.getAttribute("data-progress");
   await expect
-    .poll(() => limbs.last().getAttribute("points"))
+    .poll(() => limbs.getAttribute("data-progress"))
     .not.toBe(initial);
   await page
     .getByRole("button", { name: "Pause Dumbbell floor press demonstration" })
     .click();
-  const paused = await limbs.last().getAttribute("points");
+  const paused = await limbs.getAttribute("data-progress");
   await page.waitForTimeout(200);
-  await expect(limbs.last()).toHaveAttribute("points", paused!);
+  await expect(limbs).toHaveAttribute("data-progress", paused!);
   await page
     .getByRole("combobox", { name: "Dumbbell floor press demonstration speed" })
     .selectOption("1");
   await page
     .getByRole("button", { name: "Reset Dumbbell floor press demonstration" })
     .click();
-  await expect(limbs.last()).toHaveAttribute(
-    "points",
-    exercisePose("press", 0).arms[0],
-  );
+  await expect(limbs).toHaveAttribute("data-progress", "0.000");
+  await page
+    .getByRole("slider", { name: "Dumbbell floor press movement position" })
+    .press("End");
+  await expect(limbs).toHaveAttribute("data-progress", "1.000");
+  await page
+    .getByRole("button", { name: "Start position", exact: true })
+    .click();
+  await expect(limbs).toHaveAttribute("data-progress", "0.000");
 });
 test("reduced motion keeps demonstrations static until requested", async ({
   page,
@@ -70,11 +87,20 @@ test("reduced motion keeps demonstrations static until requested", async ({
   await page.goto("/");
   await page.getByRole("button", { name: "Choose Mary" }).click();
   await page.getByRole("button", { name: "Try on this device" }).click();
-  await page.locator(".exercise-card").first().locator("summary").click();
+  await page
+    .getByRole("button", { name: "Start workout", exact: true })
+    .click();
+  await page
+    .locator(".exercise-card")
+    .first()
+    .locator(".how-to > summary")
+    .click();
   await expect(
     page.getByText(
-      "Reduced motion is on. Positions stay still until you choose Play.",
+      "Reduced motion is on. Use the slider or choose Play when you’re ready.",
     ),
   ).toBeVisible();
-  await expect(page.locator('[data-animated="true"]')).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: /^Play .* demonstration$/ }),
+  ).toHaveAttribute("aria-pressed", "false");
 });

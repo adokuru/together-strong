@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { ArrowRight, Pause, Play, RotateCcw } from "lucide-react";
-import { exercisePose, Pose } from "@/lib/exercise-motion";
+import { ExternalLink, Pause, Play, RotateCcw } from "lucide-react";
+import HumanPose from "./human-pose";
 const reducedQuery = "(prefers-reduced-motion: reduce)";
 const subscribeMotion = (callback: () => void) => {
   const media = window.matchMedia(reducedQuery);
@@ -45,6 +45,46 @@ const labels: Record<string, [string, string, string]> = {
     "Core-control variation. Keep a comfortable neutral back and breathe normally. Return, then switch sides.",
   ],
 };
+const references: Record<
+  string,
+  { url: string; label: string; camera: string }
+> = {
+  press: {
+    url: "https://www.youtube.com/watch?v=T0Y3OBF1bNI",
+    label: "Watch PureGym’s demonstration",
+    camera: "Elevated side view · both dumbbells move together",
+  },
+  row: {
+    url: "https://naftaacademy.com/wp-content/uploads/2024/08/NAFTA_Aqua_Aerobic_Manual_2020_Condensed.pdf#page=73",
+    label: "Thigh-supported row technique guide · p73",
+    camera: "Three-quarter view · free hand supported on thigh",
+  },
+  squat: {
+    url: "https://www.nasm.org/resource-center/exercise-library/goblet-squat",
+    label: "Watch NASM’s goblet squat guide",
+    camera: "Front view · watch the knees and grounded feet",
+  },
+  rdl: {
+    url: "https://www.nasm.org/resource-center/exercise-library/dumbbell-romanian-deadlift",
+    label: "Watch NASM’s Romanian deadlift guide",
+    camera: "Side view · hips travel back, weights stay close",
+  },
+  curl: {
+    url: "https://www.mayoclinic.org/healthy-lifestyle/fitness/multimedia/biceps-curl/vid-20084675",
+    label: "Watch Mayo Clinic’s curl demonstration",
+    camera: "Three-quarter side view · elbows stay beside the torso",
+  },
+  kickback: {
+    url: "https://www.acefitness.org/resources/everyone/exercise-library/55/triceps-kickback/",
+    label: "ACE’s thigh-supported kickback guide",
+    camera: "Three-quarter view · upper arm stays still",
+  },
+  heel: {
+    url: "https://www.nhsfife.org/services/all-services/patient-advice/stage-two-exercises-for-your-tummy-muscles/",
+    label: "Watch NHS Fife’s core heel slide guide",
+    camera: "Side view · the moving heel stays on the mat",
+  },
+};
 export default function ExerciseVisual({
   id,
   name,
@@ -53,7 +93,6 @@ export default function ExerciseVisual({
   name: string;
 }) {
   const [running, setRunning] = useState(false),
-    [started, setStarted] = useState(false),
     [progress, setProgress] = useState(0),
     [speed, setSpeed] = useState(0.5);
   const phase = useRef(0),
@@ -97,157 +136,100 @@ export default function ExerciseVisual({
       document.removeEventListener("visibilitychange", visibility);
     };
   }, []);
+  const scrub = (value: number) => {
+    setRunning(false);
+    setProgress(value);
+    phase.current = Math.acos(1 - 2 * value) / (Math.PI * 2);
+  };
   return (
-    <div className="visual-guide" ref={container}>
-      <div className="visual-label">
-        HOW TO DO IT <span>START → END</span>
+    <div className="visual-guide human-guide" ref={container}>
+      <div className="demo-stage">
+        <div className="camera-label">{references[id].camera}</div>
+        <HumanPose
+          id={id}
+          progress={progress}
+          label={`${name}: human movement demonstration`}
+          animated
+        />
+        <div className="phase-caption">
+          <span>
+            {progress < 0.15
+              ? "01 · START"
+              : progress > 0.85
+                ? "02 · FINISH"
+                : "MOVE WITH CONTROL"}
+          </span>
+          <strong>{progress < 0.5 ? labels[id][0] : labels[id][1]}</strong>
+        </div>
+      </div>
+      <div className="demo-timeline">
+        <label htmlFor={`scrub-${id}`}>Study the movement</label>
+        <input
+          id={`scrub-${id}`}
+          aria-label={`${name} movement position`}
+          type="range"
+          min="0"
+          max="100"
+          step="1"
+          value={Math.round(progress * 100)}
+          onChange={(e) => scrub(Number(e.target.value) / 100)}
+        />
+        <div>
+          <button onClick={() => scrub(0)}>Start position</button>
+          <button onClick={() => scrub(1)}>Finish position</button>
+        </div>
       </div>
       <div className="demo-controls">
         <button
           className="demo-play"
           aria-label={`${running ? "Pause" : "Play"} ${name} demonstration`}
           aria-pressed={running}
-          onClick={() => {
-            setStarted(true);
-            setRunning(!running);
-          }}
+          onClick={() => setRunning(!running)}
         >
-          {running ? <Pause size={15} /> : <Play size={15} />}{" "}
-          {running ? "Pause demo" : "Play demo"}
+          {running ? <Pause size={16} /> : <Play size={16} />}{" "}
+          {running ? "Pause" : "Play movement"}
         </button>
         <label>
-          <span>Demo speed</span>
+          <span>Speed</span>
           <select
             aria-label={`${name} demonstration speed`}
             value={speed}
             onChange={(e) => setSpeed(Number(e.target.value))}
           >
-            <option value="0.5">Slow · 0.5×</option>
-            <option value="1">Controlled · 1×</option>
+            <option value=".5">Slow · 0.5×</option>
+            <option value="1">Normal · 1×</option>
           </select>
         </label>
         <button
           className="demo-reset"
           aria-label={`Reset ${name} demonstration`}
-          onClick={() => {
-            setRunning(false);
-            phase.current = 0;
-            setProgress(0);
-          }}
+          onClick={() => scrub(0)}
         >
-          <RotateCcw size={16} />
+          <RotateCcw size={17} />
         </button>
       </div>
       {reduced && (
         <p className="motion-note">
-          Reduced motion is on. Positions stay still until you choose Play.
+          Reduced motion is on. Use the slider or choose Play when you’re ready.
         </p>
       )}
-      {started && (
-        <div className="animated-pose">
-          <PoseSvg
-            pose={exercisePose(id, progress)}
-            label={`${name}: controlled animated demonstration`}
-            animated
-          />
-          <span>
-            {running
-              ? "Move with control. Keep breathing."
-              : "Paused · study the position at your own pace."}
-          </span>
-        </div>
-      )}
-      <div className="pose-pair">
-        {[0, 1].map((position, i) => (
-          <div className="pose" key={i}>
-            <PoseSvg
-              pose={exercisePose(id, position)}
-              label={`${name}: ${labels[id][i]}`}
-            />
-            <span>
-              <b>{i === 0 ? "01" : "02"}</b> {labels[id][i]}
-            </span>
-          </div>
-        ))}
-        <span className="pose-arrow">
-          <ArrowRight size={20} />
-        </span>
+      <div className="demo-form-cue">
+        <span>KEEP IN MIND</span>
+        <p>{labels[id][2]}</p>
       </div>
-      <p>{labels[id][2]}</p>
+      <a
+        className="instructor-link"
+        href={references[id].url}
+        target="_blank"
+        rel="noreferrer"
+      >
+        {references[id].label}
+        <ExternalLink size={15} />
+      </a>
       <small>
-        Simple position guide. Move only through a comfortable, controlled
-        range. Side views show one side where the limbs overlap.
+        Original movement illustration. Use a comfortable range and light
+        practice load. The linked instructor guide provides additional context.
       </small>
     </div>
-  );
-}
-function PoseSvg({
-  pose,
-  label,
-  animated = false,
-}: {
-  pose: Pose;
-  label: string;
-  animated?: boolean;
-}) {
-  return (
-    <svg
-      viewBox="0 0 160 145"
-      role="img"
-      aria-label={label}
-      data-animated={animated ? "true" : undefined}
-    >
-      <line
-        x1="15"
-        y1="125"
-        x2="149"
-        y2="125"
-        stroke="#d1d9cf"
-        strokeWidth="2"
-      />
-      <circle
-        cx={pose.head[0]}
-        cy={pose.head[1]}
-        r="9"
-        fill="#d6e4cf"
-        stroke="#3f5542"
-        strokeWidth="2.5"
-      />
-      <polyline
-        points={pose.body}
-        fill="none"
-        stroke="#3f5542"
-        strokeWidth="9"
-        strokeLinecap="round"
-      />
-      {pose.legs.map((points, j) => (
-        <polyline
-          key={`l${j}`}
-          points={points}
-          fill="none"
-          stroke={j ? "#92a38b" : "#3f5542"}
-          strokeWidth="5"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      ))}
-      {pose.arms.map((points, j) => (
-        <polyline
-          key={`a${j}`}
-          points={points}
-          fill="none"
-          stroke={j ? "#92a38b" : "#3f5542"}
-          strokeWidth="4"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      ))}
-      {pose.weights.map(([x, y], j) => (
-        <g key={j} stroke="#c2714d" strokeWidth="4" strokeLinecap="round">
-          <path d={`M${x - 9} ${y}h18`} />
-          <path d={`M${x - 7} ${y - 5}v10M${x + 7} ${y - 5}v10`} />
-        </g>
-      ))}
-    </svg>
   );
 }

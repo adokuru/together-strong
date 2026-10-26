@@ -12,7 +12,7 @@ async function enter(page: Page, profile = "David") {
   await page.getByRole("button", { name: `Choose ${profile}` }).click();
   await page.getByRole("button", { name: "Try on this device" }).click();
   await expect(
-    page.getByRole("heading", { name: `Let’s get stronger, ${profile}.` }),
+    page.getByRole("heading", { name: "Today’s workout" }),
   ).toBeVisible();
 }
 test("routine keeps personal emphasis and ramps up after two weeks", () => {
@@ -24,6 +24,13 @@ test("routine keeps personal emphasis and ramps up after two weeks", () => {
     first.rampSets = 1;
     expect(counts(makeSession(profile, first)).total).toBe(7);
     first.startedAt = new Date(Date.now() - 15 * 86400000).toISOString();
+    const trained = makeSession(profile, first);
+    trained.sets[routine(profile)[0].id][0] = {
+      reps: "10",
+      kg: "0",
+      done: true,
+    };
+    first.sessions = [trained];
     expect(weekNumber(first)).toBe(3);
     expect(counts(makeSession(profile, first)).total).toBe(15);
   }
@@ -38,6 +45,18 @@ test("saved data validation rejects duplicate sessions and invalid completed set
   data.sessions = [session];
   session.sets.press[0] = { reps: "-1", kg: "5", done: true };
   expect(parseData(data)).toBeNull();
+  const malformed = {
+    ...emptyData(),
+    sessions: [
+      {
+        ...session,
+        discardedAt: new Date().toISOString(),
+        sets: { press: null },
+      },
+    ],
+  };
+  expect(() => parseData(malformed)).not.toThrow();
+  expect(parseData(malformed)).toBeNull();
 });
 test("profile choice, empty history and narrow-screen layout", async ({
   page,
@@ -52,9 +71,9 @@ test("profile choice, empty history and narrow-screen layout", async ({
     fullPage: true,
   });
   await enter(page, "Mary");
-  await expect(
-    page.getByRole("button", { name: /01 BACK · BICEPS One-arm dumbbell row/ }),
-  ).toBeVisible();
+  await expect(page.locator(".routine-preview strong").first()).toHaveText(
+    "One-arm dumbbell row",
+  );
   await page
     .getByRole("link", { name: /History|Calendar & history/ })
     .filter({ visible: true })
@@ -83,16 +102,18 @@ test("sets save, undo, edit, reload and stay separate between profiles", async (
   await page
     .getByRole("combobox", { name: "Beginner sets per exercise" })
     .selectOption("1");
-  await page.getByRole("button", { name: "Start my workout" }).click();
+  await page.getByRole("button", { name: "Start workout" }).click();
   await expect(page.getByText("0/7 sets", { exact: true })).toBeVisible();
-  await page.getByRole("button", { name: /First, a little warm-up/ }).click();
+  await page
+    .getByRole("button", { name: /A 5-minute warm-up is recommended/ })
+    .click();
   await page
     .getByRole("button", {
       name: "Complete Dumbbell floor press set 1",
       exact: true,
     })
     .click();
-  await expect(page.getByText(/Enter reps and total kg/)).toBeVisible();
+  await expect(page.locator(".toast")).toContainText("Enter reps and total kg");
   await page.getByRole("button", { name: "Dismiss notification" }).click();
   await page
     .getByRole("spinbutton", {
@@ -137,6 +158,9 @@ test("sets save, undo, edit, reload and stay separate between profiles", async (
   ).toBeVisible();
   await page.reload();
   await page.getByRole("button", { name: "Try on this device" }).click();
+  await page
+    .getByRole("button", { name: /^(Open saved draft|Resume workout)$/ })
+    .click();
   await expect(
     page.getByRole("spinbutton", {
       name: "Dumbbell floor press set 1 reps",
@@ -151,10 +175,10 @@ test("sets save, undo, edit, reload and stay separate between profiles", async (
     .click();
   await enter(page, "Mary");
   await expect(
-    page.getByRole("button", { name: "Start my workout" }),
+    page.getByRole("button", { name: "Start workout" }),
   ).toBeVisible();
   await expect(page.getByText("0/7 sets", { exact: true })).not.toBeVisible();
-  await page.getByRole("button", { name: "Start my workout" }).click();
+  await page.getByRole("button", { name: "Start workout" }).click();
   await expect(page.getByText("0/14 sets", { exact: true })).toBeVisible();
 });
 test("finish is idempotent, history and undo completion work", async ({
@@ -162,8 +186,10 @@ test("finish is idempotent, history and undo completion work", async ({
 }) => {
   await page.goto("/");
   await enter(page);
-  await page.getByRole("button", { name: "Start my workout" }).dblclick();
-  await page.getByRole("button", { name: /First, a little warm-up/ }).click();
+  await page.getByRole("button", { name: "Start workout" }).dblclick();
+  await page
+    .getByRole("button", { name: /A 5-minute warm-up is recommended/ })
+    .click();
   await page
     .getByRole("spinbutton", {
       name: "Dumbbell floor press set 1 reps",
@@ -182,23 +208,23 @@ test("finish is idempotent, history and undo completion work", async ({
       exact: true,
     })
     .click();
-  await page.getByRole("button", { name: "Finish early & save" }).click();
+  await page.getByRole("button", { name: "Finish workout" }).click();
   await page
     .getByRole("button", { name: "Save this session", exact: true })
     .dblclick();
   await expect(
-    page.getByRole("heading", { name: "You did something good for yourself." }),
+    page.getByRole("heading", { name: "Good work. Make room for recovery." }),
   ).toBeVisible();
   const raw = await page.evaluate(() =>
     JSON.parse(localStorage.getItem("together-strong:demo:David") ?? "{}"),
   );
   expect(raw.data.sessions).toHaveLength(1);
-  await page.getByRole("button", { name: "See your history" }).click();
+  await page.getByRole("button", { name: "View completed session" }).click();
   await expect(page.getByText("1 completed", { exact: true })).toBeVisible();
   await page.locator(".history-item").click();
   await page.getByRole("button", { name: "Undo session completion" }).click();
   await expect(
-    page.getByRole("button", { name: "Finish early & save" }),
+    page.getByRole("button", { name: "Finish workout" }),
   ).toBeVisible();
 });
 test("timer pause, resume, add time, reset and close", async ({ page }) => {
@@ -227,6 +253,9 @@ test("every exercise has labelled original visual guidance and browser back work
 }) => {
   await page.goto("/");
   await enter(page);
+  await page
+    .getByRole("button", { name: "Start workout", exact: true })
+    .click();
   for (const exercise of routine("David")) {
     const card = page
       .locator(".exercise-card")
@@ -236,12 +265,10 @@ test("every exercise has labelled original visual guidance and browser back work
       "true"
     )
       await card.locator(".exercise-head").click();
-    await card.locator("summary").click();
-    await expect(card.getByRole("img")).toHaveCount(2);
+    await card.locator(".how-to > summary").click();
+    await expect(card.getByRole("img")).toHaveCount(1);
     await expect(
-      card.getByText(
-        "Simple position guide. Move only through a comfortable, controlled range.",
-      ),
+      card.getByText("Original movement illustration."),
     ).toBeVisible();
   }
   await page
@@ -254,7 +281,7 @@ test("every exercise has labelled original visual guidance and browser back work
   ).toBeVisible();
   await page.goBack();
   await expect(
-    page.getByRole("heading", { name: "Your workout" }),
+    page.getByRole("heading", { name: "Log your sets" }),
   ).toBeVisible();
   await page.screenshot({
     path: `test-results/workout-${test.info().project.name}.png`,
@@ -304,8 +331,12 @@ test("accessible profile choices, workout controls and exercise panels", async (
     })),
   ).toEqual([]);
   await enter(page);
-  await page.getByRole("button", { name: "Start my workout" }).click();
-  await page.locator(".exercise-card").first().locator("summary").click();
+  await page.getByRole("button", { name: "Start workout" }).click();
+  await page
+    .locator(".exercise-card")
+    .first()
+    .locator(".how-to > summary")
+    .click();
   expect(
     (
       await new AxeBuilder({ page })
@@ -330,13 +361,16 @@ test("another tab cannot silently replace a newer workout", async ({
 }) => {
   await page.goto("/");
   await enter(page);
-  await page.getByRole("button", { name: "Start my workout" }).click();
+  await page.getByRole("button", { name: "Start workout" }).click();
   await expect(
     page.getByText("Saved on this device", { exact: true }),
   ).toBeVisible();
   const second = await context.newPage();
   await second.goto("/");
   await enter(second);
+  await second
+    .getByRole("button", { name: "Open saved draft", exact: true })
+    .click();
   await page
     .getByRole("spinbutton", {
       name: "Dumbbell floor press set 1 reps",
@@ -360,4 +394,18 @@ test("another tab cannot silently replace a newer workout", async ({
     JSON.parse(localStorage.getItem("together-strong:demo:David") ?? "{}"),
   );
   expect(raw.data.sessions[0].sets.press[0].reps).toBe("11");
+  await second
+    .getByRole("button", { name: "Reload latest", exact: true })
+    .click();
+  await second.getByRole("button", { name: "Try on this device" }).click();
+  await second
+    .getByRole("button", { name: "Open saved draft", exact: true })
+    .click();
+  await expect(
+    second.getByRole("spinbutton", {
+      name: "Dumbbell floor press set 1 reps",
+      exact: true,
+    }),
+  ).toHaveValue("11");
+  await expect(second.locator(".error-banner")).toHaveCount(0);
 });

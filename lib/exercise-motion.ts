@@ -62,7 +62,7 @@ export function exercisePose(id: string, progress: number): Pose {
     };
   }
   if (id === "squat") {
-    const hip: Point = [80, 75 + 25 * t],
+    const hip: Point = [80, 69 + 26 * t],
       shoulder = shift(hip, 0, -40);
     const left: Point = [54, 122],
       right: Point = [106, 122];
@@ -71,26 +71,30 @@ export function exercisePose(id: string, progress: number): Pose {
       body: line(shoulder, hip),
       arms: [
         line(
-          shift(shoulder, -2, 5),
+          shift(shoulder, -11, 5),
           shift(shoulder, -16, 22),
           shift(shoulder, -1, 10),
         ),
         line(
-          shift(shoulder, 2, 5),
+          shift(shoulder, 11, 5),
           shift(shoulder, 16, 22),
           shift(shoulder, 1, 10),
         ),
       ],
       legs: [
-        line(hip, knee(hip, left, 29, 29, 1), left),
-        line(hip, knee(hip, right, 29, 29, -1), right),
+        line(shift(hip, -6, 0), knee(shift(hip, -6, 0), left, 29, 29, 1), left),
+        line(
+          shift(hip, 6, 0),
+          knee(shift(hip, 6, 0), right, 29, 29, -1),
+          right,
+        ),
       ],
       weights: [shift(shoulder, 0, 10)],
     };
   }
   if (id === "rdl") {
-    const hip: Point = [95 + 23 * t, 78],
-      shoulder = point(hip, 45, -90 - 50 * t);
+    const hip: Point = [95 + 14 * t, 71 + 2 * t],
+      shoulder = point(hip, 34, -90 - 50 * t);
     const head = point(shoulder, 13, -90 - 50 * t),
       near = shift(shoulder, 4, 3),
       far = shift(shoulder, -4, 1);
@@ -112,19 +116,19 @@ export function exercisePose(id: string, progress: number): Pose {
     };
   }
   if (id === "curl") {
-    const left: Point = [61, 65],
-      right: Point = [99, 65];
-    const lw = point(left, 25, 90 - 155 * t),
-      rw = point(right, 25, 90 + 155 * t);
+    const near: Point = [79, 65],
+      far: Point = [87, 62];
+    const nearWrist = point(near, 25, 90 + 150 * t),
+      farWrist = point(far, 25, 90 + 150 * t);
     return {
       head: [80, 23],
-      body: line([80, 36], [80, 78]),
-      arms: [line([77, 41], left, lw), line([83, 41], right, rw)],
+      body: line([80, 36], [84, 78]),
+      arms: [line([79, 41], near, nearWrist), line([87, 38], far, farWrist)],
       legs: [
-        line([80, 78], [67, 100], [65, 122]),
-        line([80, 78], [93, 100], [95, 122]),
+        line([82, 78], [80, 100], [81, 122]),
+        line([89, 78], [93, 100], [96, 122]),
       ],
-      weights: [lw, rw],
+      weights: [nearWrist, farWrist],
     };
   }
   const hip: Point = [78, 118],
