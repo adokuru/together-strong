@@ -1,0 +1,9 @@
+.git
+.private
+.agents
+.env*
+skills-lock.json
+test-results
+playwright-report
+node_modules
+.next
