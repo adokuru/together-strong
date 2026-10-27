@@ -46,9 +46,10 @@ for target, kind in [('TogetherStrong','application'),('TogetherStrongTests','bu
         children.append(ref(file_id))
         sources.append(ref(add('build-'+relative, 'PBXBuildFile', fileRef=ref(file_id))))
     if target=='TogetherStrongTests':
-        file_id=add('fixture', 'PBXFileReference', lastKnownFileType='text.json', path='../contracts/fixtures/workout-v1.json', sourceTree='SOURCE_ROOT')
-        children.append(ref(file_id))
-        resources.append(ref(add('fixture-build','PBXBuildFile',fileRef=ref(file_id))))
+        for fixture in sorted((root.parent/'contracts/fixtures').glob('*.json')):
+            file_id=add('fixture-'+fixture.name, 'PBXFileReference', lastKnownFileType='text.json', path='../contracts/fixtures/'+fixture.name, sourceTree='SOURCE_ROOT')
+            children.append(ref(file_id))
+            resources.append(ref(add('fixture-build-'+fixture.name,'PBXBuildFile',fileRef=ref(file_id))))
     groups.append(ref(add('group-'+target, 'PBXGroup', name=target, children=children, sourceTree='<group>')))
     product = add('product-'+target, 'PBXFileReference', explicitFileType='wrapper.application' if kind=='application' else 'wrapper.cfbundle', path=target+('.app' if kind=='application' else '.xctest'), sourceTree='BUILT_PRODUCTS_DIR')
     products.append(ref(product))

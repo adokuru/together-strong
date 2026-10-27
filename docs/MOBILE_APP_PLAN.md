@@ -1,6 +1,6 @@
 # Together Strong mobile app plan
 
-Planning date: 27 October 2026. Status: first milestone implemented locally and verified on simulator; physical-device validation pending.
+Planning date: 27 October 2026. Status: authentication/sync, workout logging, rest timer and animated exercise guides implemented locally; physical-device validation pending.
 
 ## Agreed direction
 
@@ -14,11 +14,11 @@ Choose the supported Xcode/Swift toolchain and minimum iOS deployment target aft
 
 ## Implementation progress
 
-The first Swift/UIKit milestone is implemented in `ios/TogetherStrong.xcodeproj`. It includes native sign-in, Keychain session restoration, workout loading, revision-protected preference sync, Core Data recovery and sign-out. The backend supports signed native bearer sessions while preserving browser protections.
+The authentication/sync, workout logging, rest timer and animated exercise guide milestones are implemented in `ios/TogetherStrong.xcodeproj`. Native logging includes all seven exercises, personal emphasis and beginner ramp-up, warm-up choices, reps and total kg, set completion/undo, save/pause/finish, completed-session review and draft discard/recovery. Local edits persist before cloud sync, including edits made during an upload. A conflict choice keeps a separate local recovery copy. Rest deadlines persist locally per account, with pause/resume/reset, added time, presets and optional local completion alerts. All seven guides have static positions, scrubbing, explicit playback and slow/normal speed, with background and Reduce Motion pause behavior.
 
-On 27 October 2026, 13 native tests and two UIKit UI tests passed on the iPhone 17 Pro simulator with iOS 26.5. The live tests used synthetic accounts in the dedicated app database and verified an unsynced preference surviving process termination before sync. All 50 web regression tests passed. Debug simulator and unsigned Release hardware builds compiled.
+On 27 October 2026, the 37-test native suite and four UIKit UI tests passed on the iPhone 17 Pro simulator with iOS 26.5. All 54 web regression tests passed in desktop/mobile Chromium. Live synthetic-account tests verified process restart, recovery, partial workout completion, timer restoration and guide playback/background behavior. Native checks cover denied notification permission, account/workout cancellation, Reduce Motion events and 147 exercise reference poses. The API independently checked the saved workout and its single completed set. Simulator and unsigned Release hardware builds compiled.
 
-Phase 1's physical-iPhone exit condition remains pending. API deployment, device signing and TestFlight distribution have not been performed. Full workout logging, exercise guides, timer, history and progress screens remain in the following phases. See `ios/README.md` for setup, test commands and current limitations.
+Physical-iPhone validation, notification lock-screen delivery, API deployment, device signing and TestFlight distribution remain pending. Calendar/trend screens and offline authentication after relaunch remain in later phases. See `ios/README.md` for setup, test commands and current limitations.
 
 ## What the repository already provides
 

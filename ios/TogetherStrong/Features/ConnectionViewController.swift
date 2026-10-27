@@ -47,7 +47,14 @@ final class ConnectionViewController: UIViewController, UITextFieldDelegate {
         configureField(password, placeholder: "Password", id: "password")
         password.isSecureTextEntry = true; password.textContentType = .password
         password.returnKeyType = .go
-        store.onChange = { [weak self] in self?.render() }
+        store.onChange = { [weak self] in
+            guard let self else { return }
+            if self.store.account == nil {
+                self.navigationController?.dismiss(animated: false)
+                self.navigationController?.popToRootViewController(animated: false)
+            }
+            self.render()
+        }
         render()
         Task { await store.restore() }
     }
@@ -149,6 +156,24 @@ final class ConnectionViewController: UIViewController, UITextFieldDelegate {
         password.text = nil
         content.addArrangedSubview(label("Your workouts, kept together across your devices.", muted: true))
         if let record = store.record {
+            let session = record.local.activeSession()
+            content.addArrangedSubview(button(session == nil ? "Start workout" : session?.isCompleted == true ? "Review workout" : "Resume workout", id: "openWorkout", primary: true) { [weak self] in
+                guard let self, self.navigationController?.topViewController === self else { return }
+                var id: String?
+                if self.store.edit(autosync: false, { id = try $0.start(profile: account.profile) }), let id {
+                    self.navigationController?.pushViewController(WorkoutViewController(store: self.store, sessionID: id), animated: true)
+                }
+            })
+            content.addArrangedSubview(button("Saved sessions", id: "savedSessions") { [weak self] in
+                guard let self else { return }
+                self.navigationController?.pushViewController(SessionListViewController(store: self.store), animated: true)
+            })
+            if record.recoveryCopy != nil {
+                content.addArrangedSubview(button("View local recovery copy", id: "recoveryCopy") { [weak self] in
+                    guard let self else { return }
+                    self.navigationController?.pushViewController(SessionListViewController(store: self.store, recovery: true), animated: true)
+                })
+            }
             let summary = label("\(record.local.completedSessionCount) workouts completed\n\(record.local.sessionCount) sessions saved", style: .title2)
             summary.accessibilityIdentifier = "workoutSummary"
             content.addArrangedSubview(summary)
@@ -160,7 +185,7 @@ final class ConnectionViewController: UIViewController, UITextFieldDelegate {
             let sets = UISegmentedControl(items: ["1 set", "2 sets"])
             sets.selectedSegmentIndex = record.local.rampSets - 1
             sets.accessibilityIdentifier = "rampSets"
-            sets.isEnabled = !store.busy && store.conflict == nil && record.sent == nil
+            sets.isEnabled = !store.busy
             sets.addAction(UIAction { [weak self, weak sets] _ in
                 guard let self, let sets else { return }
                 self.store.changeRampSets(sets.selectedSegmentIndex + 1)
@@ -200,25 +225,25 @@ final class ConnectionViewController: UIViewController, UITextFieldDelegate {
     }
 
     private func confirmCloudCopy() {
-        guard let local = store.record?.local.rampSets, let remote = store.conflict?.data.rampSets else { return }
+        guard let local = store.record?.local, let remote = store.conflict?.data else { return }
         let alert = UIAlertController(title: "Workout changed on another device",
-            message: "This iPhone has \(local) beginner sets. The cloud copy has \(remote). Using the cloud copy discards this iPhone's pending preference and loads the cloud history.", preferredStyle: .alert)
+            message: "This iPhone has \(local.sessionCount) sessions and \(local.completedSessionCount) completed workouts. The cloud has \(remote.sessionCount) sessions and \(remote.completedSessionCount) completed workouts. Using the cloud copy keeps this iPhone's changes in a separate recovery copy for review.", preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: "Keep changes on this iPhone", style: .cancel))
-        alert.addAction(UIAlertAction(title: "Use cloud copy", style: .destructive) { [weak self] _ in self?.store.useCloudCopy() })
+        alert.addAction(UIAlertAction(title: "Use cloud and keep recovery copy", style: .default) { [weak self] _ in self?.store.useCloudCopy() })
         present(alert, animated: true)
     }
 
     private func confirmSignOut() {
         let alert = UIAlertController(title: "Sign out?", message: store.dirty
-            ? "Your preference has not synced. Sync it first, or discard the pending change and remove this account's local workout copy."
-            : "This removes your sign-in and this account's workout copy from this iPhone. Your cloud history stays saved.", preferredStyle: .alert)
+            ? "Your workouts have unsynced changes. Sync first, or explicitly discard those changes and remove this account's local workout and recovery copies."
+            : "This removes your sign-in and this account's workout and recovery copies from this iPhone. Your cloud history stays saved.", preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
         if store.dirty {
             alert.addAction(UIAlertAction(title: "Sync first", style: .default) { [weak self] _ in
                 guard let self else { return }; Task { await self.store.sync() }
             })
         }
-        alert.addAction(UIAlertAction(title: store.dirty ? "Discard change and sign out" : "Sign out", style: .destructive) { [weak self] _ in
+        alert.addAction(UIAlertAction(title: store.dirty ? "Discard changes and sign out" : "Sign out", style: .destructive) { [weak self] _ in
             guard let self else { return }
             Task {
                 await self.store.signOut()

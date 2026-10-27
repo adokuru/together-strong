@@ -20,7 +20,10 @@ struct NativeIntegrationTests {
     func realBackendAuthenticationAndWorkoutRoundTrip() async throws {
         let config = try JSONDecoder().decode(LiveConfig.self, from: Data(contentsOf: URL(fileURLWithPath: try #require(LiveConfig.path))))
         let origin = try APIOrigin(config.origin)
-        #expect(["127.0.0.1", "localhost"].contains(origin.url.host ?? ""))
+        try #require(["127.0.0.1", "localhost"].contains(origin.url.host ?? "") && origin.url.scheme == "http")
+        try #require(config.emails.count == 2 && config.emails.allSatisfy {
+            $0.range(of: "^qa-(david|mary)-[a-f0-9]+@example\\.invalid$", options: .regularExpression) != nil
+        })
         let api = APIClient(origin: origin)
         let token = try await api.signIn(email: config.emails[0], password: config.password)
         let account = try await api.account(token: token)

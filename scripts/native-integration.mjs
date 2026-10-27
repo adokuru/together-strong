@@ -190,7 +190,11 @@ export async function verifyIOS({ base, emails, password, run }) {
     const exit = await new Promise((resolve, reject) => {
       const child = spawn("xcodebuild", args, {
         stdio: ["ignore", "pipe", "pipe"],
-        env: { ...process.env, TEST_RUNNER_TS_LIVE_CONFIG: config },
+        env: {
+          ...process.env,
+          TEST_RUNNER_TS_LIVE_CONFIG: config,
+          TEST_RUNNER_TS_TEST_API_ORIGIN: base,
+        },
       });
       child.stdout.pipe(log, { end: false });
       child.stderr.pipe(log, { end: false });
@@ -208,11 +212,43 @@ export async function verifyIOS({ base, emails, password, run }) {
       !/Test realBackendAuthenticationAndWorkoutRoundTrip\(\) passed/.test(
         output,
       ) ||
-      !/Test Case .*testLiveSignInSyncRestoreAndSignOut.* passed/.test(output)
+      !/Test Case .*testLiveSignInSyncRestoreAndSignOut.* passed/.test(
+        output,
+      ) ||
+      !/Test Case .*testLiveWorkoutLoggingAndRecovery.* passed/.test(output) ||
+      !/Test Case .*testLiveTimerAndGuides.* passed/.test(output)
     )
       throw Error(
         "Required live native checks did not run successfully; skipped tests cannot satisfy this milestone.",
       );
+    const login = await nativeFetch(base + "/api/auth/sign-in/email", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: emails[1], password }),
+    });
+    expect(login.status).toBe(200);
+    const headers = {
+      Authorization: `Bearer ${login.headers.get("set-auth-token")}`,
+    };
+    const saved = await nativeFetch(base + "/api/workouts?profile=Mary", {
+      headers,
+    });
+    expect(saved.status).toBe(200);
+    const { data } = await saved.json();
+    expect(data.sessions).toHaveLength(1);
+    expect(data.sessions[0].warmupState).toBe("skipped");
+    expect(data.sessions[0].sets.row[0]).toMatchObject({
+      reps: "10",
+      kg: "5",
+      done: true,
+    });
+    expect(data.sessions[0].completedAt).toBeTruthy();
+    expect(
+      Object.values(data.sessions[0].sets)
+        .flat()
+        .filter((set) => set.done),
+    ).toHaveLength(1);
+    expect(data.startedAt).toBeTruthy();
   } finally {
     unlinkSync(config);
     if (!log.writableEnded) log.end();

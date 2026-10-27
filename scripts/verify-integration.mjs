@@ -325,7 +325,7 @@ try {
     step = "Swift and UIKit simulator integration";
     await verifyIOS({ base, emails, password, run });
     ok(
-      "Swift URLSession/Keychain round-trip and UIKit sign-in, preference sync, relaunch and sign-out on iPhone simulator",
+      "Swift URLSession/Keychain and UIKit workout logging, recovery, persistent rest timer, interactive guides, sync, relaunch and sign-out on iPhone simulator",
     );
   }
   step = "forgot password request";

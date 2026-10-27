@@ -72,6 +72,6 @@ General training reference: [ACSM resistance training guidance](https://acsm.org
 
 ## Native iPhone application
 
-The Swift/UIKit project is in `ios/TogetherStrong.xcodeproj`. The initial milestone implements private sign-in, Keychain session restoration, workout loading and revision-protected preference sync, with account-scoped Core Data recovery. The existing Next.js backend now supports signed bearer sessions for the native client while retaining browser origin checks.
+The Swift/UIKit project is in `ios/TogetherStrong.xcodeproj`. The native app implements private sign-in, Keychain restoration, full personal workout routines, per-set logging, warm-up choices, draft recovery and save/pause/finish, with revision-protected sync and account-scoped Core Data recovery. It includes a deadline-based rest timer with optional local alerts and interactive animated guides for all seven exercises. The existing Next.js backend supports signed bearer sessions for the native client while retaining browser origin checks.
 
 See [the iOS setup and verification guide](ios/README.md) and [the mobile app plan](docs/MOBILE_APP_PLAN.md). API deployment, Apple signing, physical-device validation and TestFlight distribution are separate from local builds and simulator checks.

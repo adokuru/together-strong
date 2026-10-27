@@ -18,6 +18,9 @@ final class FakeAPI: WorkoutAPI {
     var failAfterSave = false
     var revoked = false
     var writes = 0
+    var holdSave = false
+    var saveGate: CheckedContinuation<Void, Never>?
+    var failBeforeSave = false
     init(_ envelope: WorkoutEnvelope) { current = envelope }
     func signIn(email: String, password: String) async throws -> String { "synthetic.signed" }
     func account(token: String) async throws -> Account {
@@ -29,6 +32,8 @@ final class FakeAPI: WorkoutAPI {
         return current
     }
     func save(profile: Profile, data: WorkoutDocument, revision: Int, token: String) async throws -> Int {
+        if holdSave { await withCheckedContinuation { saveGate = $0 } }
+        if failBeforeSave { throw APIError.transport }
         guard revision == current.revision else { throw APIError.conflict }
         current = WorkoutEnvelope(data: data, revision: revision + 1)
         writes += 1
