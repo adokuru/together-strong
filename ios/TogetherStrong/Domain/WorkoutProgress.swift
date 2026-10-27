@@ -28,7 +28,8 @@ struct WorkoutProgress {
 
     init(document: WorkoutDocument, now: Date = Date(), calendar: Calendar = WorkoutDate.calendar) {
         self.document = document; self.calendar = calendar
-        completed = document.sessions.filter { !$0.discarded && $0.isCompleted }
+        let completed = document.sessions.filter { !$0.discarded && $0.isCompleted }
+        self.completed = completed
         let today = calendar.startOfDay(for: now)
         let offset = (calendar.component(.weekday, from: today) + 5) % 7
         let monday = calendar.date(byAdding: .day, value: -offset, to: today)!

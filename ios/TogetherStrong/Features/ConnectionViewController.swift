@@ -164,9 +164,13 @@ final class ConnectionViewController: UIViewController, UITextFieldDelegate {
                     self.navigationController?.pushViewController(WorkoutViewController(store: self.store, sessionID: id), animated: true)
                 }
             })
-            content.addArrangedSubview(button("Saved sessions", id: "savedSessions") { [weak self] in
+            content.addArrangedSubview(button("History & calendar", id: "savedSessions") { [weak self] in
                 guard let self else { return }
                 self.navigationController?.pushViewController(SessionListViewController(store: self.store), animated: true)
+            })
+            content.addArrangedSubview(button("Your progress", id: "openProgress") { [weak self] in
+                guard let self else { return }
+                self.navigationController?.pushViewController(ProgressViewController(store: self.store), animated: true)
             })
             if record.recoveryCopy != nil {
                 content.addArrangedSubview(button("View local recovery copy", id: "recoveryCopy") { [weak self] in

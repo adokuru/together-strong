@@ -53,6 +53,9 @@ import {
   validSet,
   weekNumber,
   WorkoutData,
+  completedWorkouts,
+  progressSummary,
+  exerciseRecords,
 } from "@/lib/workout";
 type View = "today" | "history" | "progress";
 type SaveState = "saved" | "saving" | "error";
@@ -238,9 +241,7 @@ export default function Tracker({
     });
   };
   const session = activeSession(data);
-  const completed = data.sessions.filter(
-    (s) => !s.discardedAt && isCompleted(s),
-  );
+  const completed = completedWorkouts(data);
   const tally = counts(session);
   const week = weekNumber(data);
   const choose = (p: Profile) => {
@@ -382,15 +383,7 @@ export default function Tracker({
     setTimer((t) => ({ ...t, visible: false, running: false }));
     setNotice("Workout saved. A little stronger than yesterday.");
   };
-  const weekStart = new Date();
-  weekStart.setHours(0, 0, 0, 0);
-  weekStart.setDate(weekStart.getDate() - ((weekStart.getDay() + 6) % 7));
-  const thisWeek = completed.filter(
-    (s) =>
-      sessionDay(s) >= localDate(weekStart) &&
-      sessionDay(s) <= localDate(new Date(weekStart.getTime() + 6 * 86400000)),
-  ).length;
-  const totalSets = completed.reduce((sum, s) => sum + counts(s).done, 0);
+  const { thisWeek, sets: totalSets } = progressSummary(data);
 
   if (!profile)
     return (
@@ -945,28 +938,7 @@ export default function Tracker({
                       <TrendingUp size={24} />
                     </div>
                     {routine(profile).map((e) => {
-                      const records = completed
-                        .map((s) => {
-                          const sets = (s.sets[e.id] ?? []).filter(
-                            (x) => x.done,
-                          );
-                          const best = sets.sort((a, b) =>
-                            e.bodyweight
-                              ? Number(b.reps) - Number(a.reps)
-                              : Number(b.kg) - Number(a.kg) ||
-                                Number(b.reps) - Number(a.reps),
-                          )[0];
-                          return best
-                            ? {
-                                date: s.date,
-                                value: e.bodyweight
-                                  ? Number(best.reps)
-                                  : Number(best.kg),
-                                reps: best.reps,
-                              }
-                            : null;
-                        })
-                        .filter((x): x is NonNullable<typeof x> => Boolean(x));
+                      const records = exerciseRecords(data, e);
                       const latest = records.at(-1);
                       const max = Math.max(1, ...records.map((r) => r.value));
                       return (
