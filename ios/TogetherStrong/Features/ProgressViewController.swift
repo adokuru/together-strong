@@ -5,7 +5,7 @@ final class ProgressViewController: UIViewController {
     private let store: WorkoutStore
     private let content = UIStackView()
     private var observer: UUID?
-    private var foreground: NSObjectProtocol?
+    private var notifications: [NSObjectProtocol] = []
     private var exerciseID: String
     private var selectedRecord: String?
     private var selectedWeek: String?
@@ -38,13 +38,15 @@ final class ProgressViewController: UIViewController {
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         observer = store.observe { [weak self] in self?.render() }
-        foreground = NotificationCenter.default.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in Task { @MainActor [weak self] in self?.render() } }
+        for name in [UIApplication.didBecomeActiveNotification, UIApplication.significantTimeChangeNotification, .NSSystemTimeZoneDidChange, UIContentSizeCategory.didChangeNotification] {
+            notifications.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in Task { @MainActor [weak self] in self?.render() } })
+        }
         render()
     }
     override func viewDidDisappear(_ animated: Bool) {
         super.viewDidDisappear(animated)
         if let observer { store.removeObserver(observer) }; observer = nil
-        if let foreground { NotificationCenter.default.removeObserver(foreground) }; foreground = nil
+        notifications.forEach(NotificationCenter.default.removeObserver); notifications = []
     }
     private func label(_ text: String, style: UIFont.TextStyle = .body, id: String? = nil) -> UILabel {
         let label = UILabel(); label.text = text; label.numberOfLines = 0; label.font = .preferredFont(forTextStyle: style); label.adjustsFontForContentSizeCategory = true; label.accessibilityIdentifier = id
@@ -95,7 +97,7 @@ final class ProgressViewController: UIViewController {
             })
             show(selected, exercise: exercise); content.addArrangedSubview(recordDetail); content.addArrangedSubview(openRecord)
         }
-        content.addArrangedSubview(label("Charts use your current saved copy, including pending local edits. Recovery copies and unfinished or discarded sessions are excluded. No estimated strength or calorie calculations are used.", style: .footnote))
+        content.addArrangedSubview(label("Pending changes saved on this iPhone are included. Unfinished and discarded sessions stay out of progress totals.", style: .footnote))
     }
     private func show(_ record: ExerciseRecord, exercise: Exercise) {
         let unit = exercise.bodyweight ? "reps per side" : "kg total"

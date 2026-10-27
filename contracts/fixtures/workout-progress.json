@@ -673,7 +673,7 @@
               }
             ]
           },
-          "completedAt": "2026-10-25T14:00:00.000Z"
+          "completedAt": "2026-10-26T13:00:00.000Z"
         },
         {
           "id": "completed-17",
@@ -2481,7 +2481,7 @@
     "summary": {
       "workouts": 21,
       "sets": 78,
-      "thisWeek": 1
+      "thisWeek": 2
     },
     "weekly": [
       {
@@ -2510,11 +2510,11 @@
       },
       {
         "date": "2026-10-19",
-        "count": 3
+        "count": 2
       },
       {
         "date": "2026-10-26",
-        "count": 1
+        "count": 2
       }
     ],
     "records": {
@@ -2775,7 +2775,7 @@
       "draft": "2026-10-28",
       "paused": "2026-10-27",
       "late-finish": "2026-10-26",
-      "completed-18": "2026-10-25",
+      "completed-18": "2026-10-26",
       "completed-17": "2026-10-22",
       "completed-16": "2026-10-19",
       "completed-15": "2026-10-16",
@@ -3470,7 +3470,7 @@
               }
             ]
           },
-          "completedAt": "2026-10-25T14:00:00.000Z"
+          "completedAt": "2026-10-26T13:00:00.000Z"
         },
         {
           "id": "completed-17",
@@ -5278,7 +5278,7 @@
     "summary": {
       "workouts": 21,
       "sets": 78,
-      "thisWeek": 1
+      "thisWeek": 2
     },
     "weekly": [
       {
@@ -5307,11 +5307,11 @@
       },
       {
         "date": "2026-10-19",
-        "count": 3
+        "count": 2
       },
       {
         "date": "2026-10-26",
-        "count": 1
+        "count": 2
       }
     ],
     "records": {
@@ -5572,7 +5572,7 @@
       "draft": "2026-10-28",
       "paused": "2026-10-27",
       "late-finish": "2026-10-27",
-      "completed-18": "2026-10-25",
+      "completed-18": "2026-10-26",
       "completed-17": "2026-10-22",
       "completed-16": "2026-10-19",
       "completed-15": "2026-10-16",
@@ -6267,7 +6267,7 @@
               }
             ]
           },
-          "completedAt": "2026-10-25T14:00:00.000Z"
+          "completedAt": "2026-10-26T13:00:00.000Z"
         },
         {
           "id": "completed-17",
@@ -8100,11 +8100,11 @@
       },
       {
         "date": "2026-10-19",
-        "count": 3
+        "count": 2
       },
       {
         "date": "2026-10-26",
-        "count": 2
+        "count": 3
       },
       {
         "date": "2026-11-02",
@@ -8369,7 +8369,7 @@
       "draft": "2026-10-28",
       "paused": "2026-10-27",
       "late-finish": "2026-10-26",
-      "completed-18": "2026-10-25",
+      "completed-18": "2026-10-26",
       "completed-17": "2026-10-22",
       "completed-16": "2026-10-19",
       "completed-15": "2026-10-16",
@@ -9064,7 +9064,7 @@
               }
             ]
           },
-          "completedAt": "2026-10-25T14:00:00.000Z"
+          "completedAt": "2026-10-26T13:00:00.000Z"
         },
         {
           "id": "completed-17",
@@ -11166,7 +11166,7 @@
       "draft": "2026-10-28",
       "paused": "2026-10-27",
       "late-finish": "2026-10-27",
-      "completed-18": "2026-10-26",
+      "completed-18": "2026-10-27",
       "completed-17": "2026-10-23",
       "completed-16": "2026-10-20",
       "completed-15": "2026-10-17",

@@ -11,6 +11,7 @@ struct WorkoutChartEntry {
 final class WorkoutBarChartView: UIView {
     private let scroll = UIScrollView()
     private var positioned = false
+    private weak var initialBar: UIButton?
     init(entries: [WorkoutChartEntry], unit: String, selectedID: String?, id: String, onSelect: @escaping (String) -> Void) {
         super.init(frame: .zero)
         let maximum = max(1, entries.map(\.value).max() ?? 0)
@@ -23,6 +24,7 @@ final class WorkoutBarChartView: UIView {
             let column = UIStackView(); column.axis = .vertical; column.spacing = 4; column.alignment = .fill
             let bar = WorkoutChartBar(value: entry.value, maximum: maximum)
             bar.isSelected = selectedID == entry.id
+            if bar.isSelected { initialBar = bar }
             bar.accessibilityIdentifier = "\(id)-\(entry.id)"
             bar.accessibilityLabel = "\(WorkoutDate.display(entry.date)), \(entry.value.formatted()) \(unit). \(entry.detail)"
             bar.accessibilityHint = "Shows this record's details"
@@ -55,7 +57,8 @@ final class WorkoutBarChartView: UIView {
         super.layoutSubviews()
         guard !positioned, scroll.bounds.width > 0, scroll.contentSize.width > 0 else { return }
         positioned = true
-        scroll.setContentOffset(CGPoint(x: max(0, scroll.contentSize.width-scroll.bounds.width), y: 0), animated: false)
+        if let initialBar { scroll.scrollRectToVisible(initialBar.convert(initialBar.bounds, to: scroll), animated: false) }
+        else { scroll.setContentOffset(CGPoint(x: max(0, scroll.contentSize.width-scroll.bounds.width), y: 0), animated: false) }
     }
     required init?(coder: NSCoder) { fatalError("Use init(entries:unit:selectedID:id:onSelect:)") }
 }

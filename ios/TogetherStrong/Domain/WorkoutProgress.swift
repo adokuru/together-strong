@@ -18,33 +18,36 @@ struct WorkoutProgress {
     let completed: [WorkoutSession]
     let thisWeek: Int
     let weekly: [WeeklyWorkoutCount]
+    let history: [WorkoutSession]
+    private let sessionsByDay: [String: [WorkoutSession]]
     var totalSets: Int { completed.reduce(0) { $0 + $1.doneCount } }
-    var history: [WorkoutSession] {
-        document.sessions.filter { !$0.discarded }.sorted {
-            let a = $0.day(calendar: calendar), b = $1.day(calendar: calendar)
-            return a == b ? $0.date > $1.date : a > b
-        }
-    }
+    var days: Set<String> { Set(sessionsByDay.keys) }
 
     init(document: WorkoutDocument, now: Date = Date(), calendar: Calendar = WorkoutDate.calendar) {
         self.document = document; self.calendar = calendar
-        let completed = document.sessions.filter { !$0.discarded && $0.isCompleted }
+        let available = document.sessions.filter { !$0.discarded }
+        let days = Dictionary(uniqueKeysWithValues: available.map { ($0.id, $0.day(calendar: calendar)) })
+        let history = available.sorted { a, b in days[a.id] == days[b.id] ? a.date > b.date : days[a.id]! > days[b.id]! }
+        self.history = history
+        sessionsByDay = Dictionary(grouping: history) { days[$0.id]! }
+        let completed = available.filter(\.isCompleted)
         self.completed = completed
+        let completedDays = completed.map { days[$0.id]! }
         let today = calendar.startOfDay(for: now)
         let offset = (calendar.component(.weekday, from: today) + 5) % 7
         let monday = calendar.date(byAdding: .day, value: -offset, to: today)!
         let start = WorkoutDate.day(monday, calendar: calendar)
         let end = WorkoutDate.day(calendar.date(byAdding: .day, value: 7, to: monday)!, calendar: calendar)
-        thisWeek = completed.filter { let day = $0.day(calendar: calendar); return day >= start && day < end }.count
+        thisWeek = completedDays.filter { $0 >= start && $0 < end }.count
         weekly = (0..<8).map { index in
             let date = calendar.date(byAdding: .day, value: (index - 7) * 7, to: monday)!
             let start = WorkoutDate.day(date, calendar: calendar)
             let end = WorkoutDate.day(calendar.date(byAdding: .day, value: 7, to: date)!, calendar: calendar)
-            return WeeklyWorkoutCount(date: start, count: completed.filter { let day = $0.day(calendar: calendar); return day >= start && day < end }.count)
+            return WeeklyWorkoutCount(date: start, count: completedDays.filter { $0 >= start && $0 < end }.count)
         }
     }
 
-    func sessions(on day: String) -> [WorkoutSession] { history.filter { $0.day(calendar: calendar) == day } }
+    func sessions(on day: String) -> [WorkoutSession] { sessionsByDay[day] ?? [] }
     func records(for exercise: Exercise) -> [ExerciseRecord] {
         completed.compactMap { session in
             let best = session.sets(exercise.id).filter(\.done).max { a, b in

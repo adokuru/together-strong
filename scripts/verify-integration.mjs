@@ -2,6 +2,7 @@ import { chromium, expect } from "@playwright/test";
 import { Pool } from "pg";
 import { randomBytes } from "node:crypto";
 import { spawn } from "node:child_process";
+import { createServer } from "node:net";
 import {
   readFileSync,
   writeFileSync,
@@ -19,8 +20,24 @@ if (
   throw Error(
     "Opt in with RUN_DB_INTEGRATION=1 and CONFIRM_TEST_DB=together-strong, using only the isolated app database.",
   );
+const port = Number(process.env.INTEGRATION_PORT ?? 3191);
+if (!Number.isInteger(port) || port < 1024 || port > 65535)
+  throw Error("Use a local integration port from 1024 to 65535.");
+await new Promise((resolve, reject) => {
+  const probe = createServer();
+  probe.once("error", () =>
+    reject(
+      Error(
+        "Integration port is occupied. Choose another INTEGRATION_PORT; existing servers must remain untouched.",
+      ),
+    ),
+  );
+  probe.listen(port, "127.0.0.1", () =>
+    probe.close((error) => (error ? reject(error) : resolve())),
+  );
+});
 const run = randomBytes(6).toString("hex"),
-  base = "http://127.0.0.1:3191",
+  base = `http://127.0.0.1:${port}`,
   outbox = path.join(process.cwd(), ".private", `auth-outbox-${run}.jsonl`);
 const emails = [
     process.env.INTEGRATION_DAVID_EMAIL ?? `qa-david-${run}@example.invalid`,
@@ -55,7 +72,7 @@ const server = spawn(
     "--hostname",
     "127.0.0.1",
     "--port",
-    "3191",
+    String(port),
   ],
   {
     stdio: "ignore",
@@ -142,6 +159,8 @@ async function signin(profile, email, pwd) {
 }
 try {
   for (let attempt = 0; attempt < 100; attempt++) {
+    if (server.exitCode !== null)
+      throw Error("The isolated integration server could not start.");
     try {
       if ((await fetch(base)).ok) break;
     } catch {}
@@ -729,7 +748,20 @@ try {
     ),
     { mode: 0o600 },
   );
-} catch {
+} catch (error) {
+  const diagnostic = String(error)
+    .split("Call log:")[0]
+    .slice(0, 1600)
+    .replaceAll(password, "[private test input]")
+    .replaceAll(newPassword, "[private test input]")
+    .replaceAll(emails[0], "[synthetic David]")
+    .replaceAll(emails[1], "[synthetic Mary]")
+    .replace(/https?:\/\/[^\s\"']+/g, "[private URL]");
+  writeFileSync(
+    path.join(".private", `integration-error-${run}.txt`),
+    `${step}\n${diagnostic}\n`,
+    { mode: 0o600 },
+  );
   console.error(
     `Integration verification failed during: ${step}. Private input and token diagnostics are deliberately omitted.`,
   );

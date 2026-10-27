@@ -1,6 +1,6 @@
 # Together Strong for iPhone
 
-Native Swift and UIKit app, with no third-party iOS dependencies. It supports private sign-in, Keychain session restoration, all seven exercises in each personal routine, warm-up choices, per-set reps and total kg, completion/undo, save/pause/finish, saved-session review, recoverable drafts, a persistent rest timer and animated exercise guides. Calendar and progress charts are subsequent milestones.
+Native Swift and UIKit app, with no third-party iOS dependencies. It supports private sign-in, Keychain session restoration, all seven exercises in each personal routine, warm-up choices, per-set logging, save/pause/finish, recoverable drafts, a persistent rest timer, animated guides, calendar history and interactive progress charts.
 
 ## Open and run
 
@@ -51,6 +51,8 @@ RUN_DB_INTEGRATION=1 CONFIRM_TEST_DB=together-strong RUN_IOS_INTEGRATION=1 \
 
 Set `IOS_TEST_DESTINATION` if the named simulator is unavailable. The runner creates synthetic invited accounts, delivers setup/reset mail to an owner-only local outbox, writes a temporary native test configuration, tests both profiles, and removes its accounts/configuration afterward. No email is sent to real recipients. Native test logs and Xcode results stay in ignored `.private/ios/`; they must not be published because UI diagnostics may include temporary test inputs. Do not place real credentials in test configuration.
 
+The default integration port is 3191. If another local server uses it, set `INTEGRATION_PORT=3193` or another free loopback port. The runner refuses occupied ports and leaves existing servers running. Its live UI tests temporarily load calendar/progress fixtures into the synthetic David account, restore that account's original test document afterward, and then remove the run's synthetic accounts. Fixture writes require synthetic identity validation.
+
 ## Workout logging
 
 Open Start workout or Resume workout from the signed-in home screen. Warm-up is optional and has Start warm-up, I've warmed up and Skip for now paths. Expand an exercise to enter reps and total kg, then complete its set. Bodyweight exercises require reps only. Existing form instructions are available from each exercise.
@@ -59,7 +61,7 @@ Every accepted edit saves to Core Data immediately. The app attempts cloud sync 
 
 Empty drafts never count as completed workouts. The programme clock starts with the first completed set. Editing a completed set clears its tick; a completed workout must be reopened before its entries can change. Finishing a partial workout leaves all remaining sets unfinished. Today's completion can be undone. Older drafts keep their original date when resumed.
 
-Saved sessions contains completed workouts, unfinished sessions and recoverable discarded drafts. Discarding an empty draft preserves its entered values. Restoration refuses to create two live sessions for the same date. Previously completed set values appear as reference and do not prefill new loads.
+History & calendar contains completed workouts, unfinished sessions and recoverable discarded drafts. Discarding an empty draft preserves its entered values. Restoration refuses to create two live sessions for the same date. Previously completed set values appear as reference and do not prefill new loads.
 
 Swift exercise content is generated from the web source. To update it and the common parity fixtures, run from the repository root:
 
@@ -84,6 +86,23 @@ Motion geometry is checked against 147 reference poses generated from the web im
 
 ```sh
 node --experimental-strip-types scripts/generate-motion-fixtures.mjs
+python3 scripts/generate-ios-project.py
+```
+
+## History, calendar and progress
+
+Open History & calendar from home. The native calendar marks completed days with a check and unfinished days with an orange dot. Select any day to see all its sessions, including multiple workouts finished on the same day. Today and Latest jump to a date; All dates clears the date selection. All, Completed and Unfinished filter the list. Recoverable discarded drafts appear under All dates with the All filter. Pull down to refresh.
+
+Completed sessions appear on their completion day in the phone's time zone. A session finished later than it started also shows its original start date in the list. Unfinished sessions keep their original day. Tap an unfinished session to resume it; tap a completed workout to review its sets. Undo completion remains available for workouts completed today. Calendar browsing and filtering do not edit workout records.
+
+Your progress shows completed workouts, completed sets from those workouts, and this week's sessions against the existing three-session target. Weeks run Monday to Sunday. The weekly chart shows eight weeks; tap a bar for its count. Exercise charts show the last twelve recorded workouts in chronological order by their original workout date. Swipe horizontally and tap a bar for the exact date, load and reps, then open the selected workout for review. Weighted exercises use the highest completed load, breaking ties by reps; bodyweight uses the highest completed reps per side. Zero-load sets remain valid records. Unfinished sets and sessions never enter the charts.
+
+Both screens derive from the authenticated account's current local snapshot. Pending sync and conflicts remain visible, and totals can include completed workouts waiting to upload. Separate recovery copies are excluded. Charts have labelled scales, accessible bar buttons and text readouts. Calendar data and weekly totals refresh after foregrounding, significant clock changes and time-zone changes. All stored history remains available even though exercise charts show only twelve points.
+
+Shared progress fixtures cover empty and unordered histories, best-set ties, paused/discarded/empty sessions, completion after midnight, daylight-saving changes and multiple local time zones. Regenerate after changing the metric rules in `lib/workout.ts`:
+
+```sh
+node --experimental-strip-types scripts/generate-progress-fixtures.mjs
 python3 scripts/generate-ios-project.py
 ```
 

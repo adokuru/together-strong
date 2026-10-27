@@ -158,6 +158,15 @@ export async function verifyNativeHTTP({
 }
 
 export async function verifyIOS({ base, emails, password, run }) {
+  if (
+    emails.length !== 2 ||
+    !emails.every((email) =>
+      /^qa-(david|mary)-[a-f0-9]+@example\.invalid$/.test(email),
+    )
+  )
+    throw Error(
+      "Native UI fixture writes require synthetic invited identities.",
+    );
   const folder = path.resolve(".private/ios");
   mkdirSync(folder, { recursive: true, mode: 0o700 });
   const config = path.join(folder, `live-${run}.json`);
@@ -168,7 +177,35 @@ export async function verifyIOS({ base, emails, password, run }) {
   const log = createWriteStream(logPath, {
     mode: 0o600,
   });
+  let before, fixtureHeaders;
   try {
+    const fixtureLogin = await nativeFetch(base + "/api/auth/sign-in/email", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: emails[0], password }),
+    });
+    expect(fixtureLogin.status).toBe(200);
+    fixtureHeaders = {
+      Authorization: `Bearer ${fixtureLogin.headers.get("set-auth-token")}`,
+    };
+    const current = await nativeFetch(base + "/api/workouts?profile=David", {
+      headers: fixtureHeaders,
+    });
+    expect(current.status).toBe(200);
+    before = await current.json();
+    const samples = JSON.parse(
+      readFileSync("contracts/fixtures/workout-progress.json", "utf8"),
+    );
+    const seeded = await nativeFetch(base + "/api/workouts", {
+      method: "PUT",
+      headers: { ...fixtureHeaders, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        profile: "David",
+        data: samples[0].data,
+        revision: before.revision,
+      }),
+    });
+    expect(seeded.status).toBe(200);
     const args = [
       "-project",
       "ios/TogetherStrong.xcodeproj",
@@ -216,7 +253,8 @@ export async function verifyIOS({ base, emails, password, run }) {
         output,
       ) ||
       !/Test Case .*testLiveWorkoutLoggingAndRecovery.* passed/.test(output) ||
-      !/Test Case .*testLiveTimerAndGuides.* passed/.test(output)
+      !/Test Case .*testLiveTimerAndGuides.* passed/.test(output) ||
+      !/Test Case .*testLiveHistoryCalendarAndProgress.* passed/.test(output)
     )
       throw Error(
         "Required live native checks did not run successfully; skipped tests cannot satisfy this milestone.",
@@ -250,7 +288,39 @@ export async function verifyIOS({ base, emails, password, run }) {
     ).toHaveLength(1);
     expect(data.startedAt).toBeTruthy();
   } finally {
-    unlinkSync(config);
-    if (!log.writableEnded) log.end();
+    try {
+      if (before && fixtureHeaders) {
+        const current = await nativeFetch(
+          base + "/api/workouts?profile=David",
+          { headers: fixtureHeaders },
+        );
+        expect(current.status).toBe(200);
+        const { revision } = await current.json();
+        const restored = await nativeFetch(base + "/api/workouts", {
+          method: "PUT",
+          headers: { ...fixtureHeaders, "Content-Type": "application/json" },
+          body: JSON.stringify({
+            profile: "David",
+            data: before.data,
+            revision,
+          }),
+        });
+        expect(restored.status).toBe(200);
+        const readBack = await nativeFetch(
+          base + "/api/workouts?profile=David",
+          { headers: fixtureHeaders },
+        );
+        expect(readBack.status).toBe(200);
+        expect((await readBack.json()).data).toEqual(before.data);
+        await nativeFetch(base + "/api/auth/sign-out", {
+          method: "POST",
+          headers: { ...fixtureHeaders, "Content-Type": "application/json" },
+          body: "{}",
+        });
+      }
+    } finally {
+      unlinkSync(config);
+      if (!log.writableEnded) log.end();
+    }
   }
 }

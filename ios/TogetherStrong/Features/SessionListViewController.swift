@@ -14,7 +14,7 @@ final class SessionListViewController: UITableViewController, UICalendarViewDele
     private let filters = UISegmentedControl(items: ["All", "Completed", "Unfinished"])
     private let status = UILabel()
     private let dayLabel = UILabel()
-    private var foreground: NSObjectProtocol?
+    private var notifications: [NSObjectProtocol] = []
     private var decoratedDays: Set<String> = []
     init(store: WorkoutStore, recovery: Bool = false) { self.store = store; self.recovery = recovery; super.init(style: .insetGrouped) }
     required init?(coder: NSCoder) { fatalError("Use init(store:recovery:)") }
@@ -40,13 +40,15 @@ final class SessionListViewController: UITableViewController, UICalendarViewDele
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         observer = store.observe { [weak self] in self?.reload() }
-        foreground = NotificationCenter.default.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in Task { @MainActor [weak self] in self?.reload() } }
+        for name in [UIApplication.didBecomeActiveNotification, UIApplication.significantTimeChangeNotification, .NSSystemTimeZoneDidChange] {
+            notifications.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in Task { @MainActor [weak self] in self?.reload() } })
+        }
         reload()
     }
     override func viewDidDisappear(_ animated: Bool) {
         super.viewDidDisappear(animated)
         if let observer { store.removeObserver(observer) }; observer = nil
-        if let foreground { NotificationCenter.default.removeObserver(foreground) }; foreground = nil
+        notifications.forEach(NotificationCenter.default.removeObserver); notifications = []
     }
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
@@ -68,11 +70,12 @@ final class SessionListViewController: UITableViewController, UICalendarViewDele
         let legend = UILabel(); legend.text = "✓ Completed workout · orange dot: unfinished\nCompleted workouts appear on the day you finished. Drafts keep their original date."
         legend.font = .preferredFont(forTextStyle: .footnote); legend.adjustsFontForContentSizeCategory = true; legend.numberOfLines = 0; header.addArrangedSubview(legend)
         let actions = UIStackView(); actions.axis = .horizontal; actions.distribution = .fillEqually; actions.spacing = 12
-        for (title, id) in [("Today", "historyToday"), ("All dates", "historyAllDates")] {
+        for (title, id) in [("Today", "historyToday"), ("Latest", "historyLatest"), ("All dates", "historyAllDates")] {
             let button = UIButton(type: .system); button.configuration = .tinted(); button.configuration?.title = title; button.accessibilityIdentifier = id; button.heightAnchor.constraint(greaterThanOrEqualToConstant: 44).isActive = true
+            button.titleLabel?.numberOfLines = 0; button.titleLabel?.adjustsFontForContentSizeCategory = true
             button.addAction(UIAction { [weak self] _ in
                 guard let self else { return }
-                self.selectedDay = id == "historyToday" ? WorkoutDate.day(Date()) : nil
+                self.selectedDay = id == "historyToday" ? WorkoutDate.day(Date()) : id == "historyLatest" ? self.progress?.history.first?.day() : nil
                 let components = self.selectedDay.flatMap { WorkoutDate.date($0) }.map { self.calendarView.calendar.dateComponents([.year,.month,.day], from: $0) }
                 (self.calendarView.selectionBehavior as? UICalendarSelectionSingleDate)?.setSelected(components, animated: false)
                 if let components { self.calendarView.setVisibleDateComponents(components, animated: true) }
@@ -92,7 +95,7 @@ final class SessionListViewController: UITableViewController, UICalendarViewDele
         guard isViewLoaded else { return }
         progress = document.map { WorkoutProgress(document: $0) }
         var sessions = progress?.history ?? []
-        if let selectedDay { sessions = sessions.filter { $0.day() == selectedDay } }
+        if let selectedDay { sessions = progress?.sessions(on: selectedDay) ?? [] }
         if filters.selectedSegmentIndex == 1 { sessions = sessions.filter(\.isCompleted) }
         if filters.selectedSegmentIndex == 2 { sessions = sessions.filter { !$0.isCompleted } }
         let discarded = document?.sessions.filter(\.discarded).sorted { $0.date > $1.date } ?? []
@@ -102,7 +105,7 @@ final class SessionListViewController: UITableViewController, UICalendarViewDele
             dayLabel.text = "\(selectedDay.map { WorkoutDate.display($0) } ?? "All dates") · \(sessions.count) \(sessions.count == 1 ? "session" : "sessions")"
             var calendar = WorkoutDate.calendar; calendar.firstWeekday = 2
             if calendarView.calendar != calendar { calendarView.calendar = calendar }
-            let days = Set((progress?.history ?? []).map { $0.day() })
+            let days = progress?.days ?? []
             calendarView.reloadDecorations(forDateComponents: Array(days.union(decoratedDays)).compactMap { WorkoutDate.date($0).map { calendarView.calendar.dateComponents([.year,.month,.day], from: $0) } }, animated: false)
             decoratedDays = days
         }

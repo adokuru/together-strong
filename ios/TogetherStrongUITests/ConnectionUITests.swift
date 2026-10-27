@@ -11,6 +11,12 @@ nonisolated final class ConnectionUITests: XCTestCase {
     func testSignInScreenAndValidation() throws {
         let app = XCUIApplication()
         app.launchEnvironment["TS_TEST_API_ORIGIN"] = "http://127.0.0.1:3191"
+        if let path = ProcessInfo.processInfo.environment["TS_LIVE_CONFIG"], path.hasPrefix("/"),
+           let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
+           let fields = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+           let origin = fields["origin"] as? String, let emails = fields["emails"] as? [String], safeFixture(origin: origin, emails: emails) {
+            app.launchEnvironment["TS_TEST_API_ORIGIN"] = origin
+        }
         app.launch()
         ensureSignedOut(app)
         XCTAssertTrue(app.secureTextFields["password"].exists)
@@ -82,6 +88,78 @@ nonisolated final class ConnectionUITests: XCTestCase {
         }
         let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == true AND enabled == true"), object: app.textFields["email"])
         XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 20), .completed)
+    }
+
+    @MainActor func testLiveHistoryCalendarAndProgress() throws {
+        guard let path = ProcessInfo.processInfo.environment["TS_LIVE_CONFIG"], path.hasPrefix("/"),
+              FileManager.default.fileExists(atPath: path) else { throw XCTSkip("Live backend is opt-in.") }
+        struct Config: Decodable { let origin: String; let emails: [String]; let password: String }
+        let config = try JSONDecoder().decode(Config.self, from: Data(contentsOf: URL(fileURLWithPath: path)))
+        guard safeFixture(origin: config.origin, emails: config.emails) else { throw FixtureError.requiresSyntheticLoopback }
+        let app = XCUIApplication(); app.launchEnvironment["TS_TEST_API_ORIGIN"] = config.origin; app.launch()
+        ensureSignedOut(app)
+        app.textFields["email"].tap(); app.textFields["email"].typeText(config.emails[0])
+        app.secureTextFields["password"].tap(); app.secureTextFields["password"].typeText(config.password)
+        app.buttons["signIn"].tap()
+        XCTAssertTrue(app.buttons["savedSessions"].waitForExistence(timeout: 15))
+        if app.buttons["Not Now"].waitForExistence(timeout: 3) { app.buttons["Not Now"].tap() }
+        reveal(app.buttons["savedSessions"], in: app); app.buttons["savedSessions"].tap()
+        XCTAssertTrue(app.segmentedControls["historyFilter"].waitForExistence(timeout: 10))
+        app.segmentedControls["historyFilter"].buttons["Completed"].tap()
+        XCTAssertTrue(app.staticTexts["historyDay"].label.contains("21 sessions"))
+        app.segmentedControls["historyFilter"].buttons["Unfinished"].tap()
+        XCTAssertTrue(app.staticTexts["historyDay"].label.contains("3 sessions"))
+        app.segmentedControls["historyFilter"].buttons["All"].tap()
+        app.buttons["historyToday"].tap()
+        XCTAssertFalse(app.staticTexts["historyDay"].label.contains("All dates"))
+        app.buttons["historyLatest"].tap()
+        XCTAssertTrue(app.staticTexts["historyDay"].label.contains("1 session"))
+        let calendarShot = XCTAttachment(screenshot: app.screenshot()); calendarShot.name = "Workout calendar on iPhone"; calendarShot.lifetime = .keepAlways; add(calendarShot)
+        app.buttons["historyAllDates"].tap()
+        XCTAssertTrue(app.staticTexts["historyDay"].label.contains("24 sessions"))
+        app.tables.cells["session-draft"].tap()
+        XCTAssertTrue(app.staticTexts["sessionProgress"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["sessionProgress"].label.contains("2026-10-28"))
+        app.navigationBars.buttons.firstMatch.tap()
+        app.navigationBars.buttons.firstMatch.tap()
+        reveal(app.buttons["openProgress"], in: app); app.buttons["openProgress"].tap()
+        XCTAssertTrue(app.staticTexts["progressSummary"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["progressSummary"].label.contains("21 workouts completed"))
+        XCTAssertTrue(app.staticTexts["progressSummary"].label.contains("78 completed sets"))
+        let progressShot = XCTAttachment(screenshot: app.screenshot()); progressShot.name = "Workout progress on iPhone"; progressShot.lifetime = .keepAlways; add(progressShot)
+        reveal(app.buttons["exerciseChart-completed-18"], in: app); app.buttons["exerciseChart-completed-18"].tap()
+        XCTAssertTrue(app.buttons["exerciseChart-completed-18"].isSelected)
+        XCTAssertTrue(app.staticTexts["exerciseRecordDetail"].label.contains("12 reps"))
+        let chartShot = XCTAttachment(screenshot: app.screenshot()); chartShot.name = "Exercise progress chart on iPhone"; chartShot.lifetime = .keepAlways; add(chartShot)
+        reveal(app.buttons["progressExercise"], in: app, upwards: false); app.buttons["progressExercise"].tap()
+        app.buttons["Bodyweight heel slides"].tap()
+        reveal(app.staticTexts["exerciseRecordDetail"], in: app)
+        XCTAssertTrue(app.staticTexts["exerciseRecordDetail"].label.contains("reps per side"))
+        reveal(app.buttons["progressOpenWorkout"], in: app); app.buttons["progressOpenWorkout"].tap()
+        XCTAssertTrue(app.staticTexts["sessionProgress"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["sessionProgress"].label.contains("Complete"))
+        app.navigationBars.buttons.firstMatch.tap()
+        reveal(app.buttons["progressExercise"], in: app, upwards: false); app.buttons["progressExercise"].tap(); app.buttons["Dumbbell curls"].tap()
+        XCTAssertTrue(app.staticTexts["progressEmpty"].exists)
+        app.terminate(); app.launch()
+        XCTAssertTrue(app.buttons["openProgress"].waitForExistence(timeout: 15)); reveal(app.buttons["openProgress"], in: app); app.buttons["openProgress"].tap()
+        XCTAssertTrue(app.staticTexts["progressSummary"].waitForExistence(timeout: 10)); XCTAssertTrue(app.staticTexts["progressSummary"].label.contains("21 workouts completed"))
+        app.navigationBars.buttons.firstMatch.tap()
+        reveal(app.buttons["signOut"], in: app); app.buttons["signOut"].tap()
+        let discard = app.alerts.buttons["Discard changes and sign out"]
+        if discard.exists { discard.tap() } else { app.alerts.buttons["Sign out"].tap() }
+        XCTAssertTrue(app.textFields["email"].waitForExistence(timeout: 15))
+        app.textFields["email"].tap(); app.textFields["email"].typeText(config.emails[1])
+        app.secureTextFields["password"].tap(); app.secureTextFields["password"].typeText(config.password)
+        app.buttons["signIn"].tap()
+        XCTAssertTrue(app.buttons["openProgress"].waitForExistence(timeout: 15))
+        if app.buttons["Not Now"].waitForExistence(timeout: 3) { app.buttons["Not Now"].tap() }
+        reveal(app.buttons["openProgress"], in: app); app.buttons["openProgress"].tap()
+        XCTAssertTrue(app.staticTexts["progressSummary"].waitForExistence(timeout: 10)); XCTAssertTrue(app.staticTexts["progressSummary"].label.contains("0 workouts completed"))
+        XCTAssertTrue(app.staticTexts["progressEmpty"].exists)
+        app.navigationBars.buttons.firstMatch.tap()
+        reveal(app.buttons["signOut"], in: app); app.buttons["signOut"].tap(); app.alerts.buttons["Sign out"].tap()
+        XCTAssertTrue(app.textFields["email"].waitForExistence(timeout: 15))
     }
 
     @MainActor func testLiveTimerAndGuides() throws {
@@ -173,8 +251,9 @@ nonisolated final class ConnectionUITests: XCTestCase {
         app.alerts.buttons["Discard draft"].tap()
         XCTAssertTrue(app.buttons["savedSessions"].waitForExistence(timeout: 10))
         reveal(app.buttons["savedSessions"], in: app); app.buttons["savedSessions"].tap()
-        XCTAssertTrue(app.tables.cells.firstMatch.waitForExistence(timeout: 10)); app.tables.cells.firstMatch.tap()
-        app.alerts.buttons["Restore draft"].tap(); app.tables.cells.firstMatch.tap()
+        let saved = app.tables.cells.matching(NSPredicate(format: "identifier BEGINSWITH %@", "session-")).firstMatch
+        XCTAssertTrue(saved.waitForExistence(timeout: 10)); saved.tap()
+        app.alerts.buttons["Restore draft"].tap(); saved.tap()
         XCTAssertTrue(app.textFields["reps-row-0"].waitForExistence(timeout: 10))
         XCTAssertEqual(app.textFields["reps-row-0"].value as? String, "7")
         reveal(app.buttons["complete-row-0"], in: app); app.buttons["complete-row-0"].tap()
