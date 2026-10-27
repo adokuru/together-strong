@@ -11,3 +11,12 @@ playwright-report/
 .private/
 .agents/
 skills-lock.json
+
+ios/.build/
+ios/DerivedData/
+ios/Configuration/Local.xcconfig
+ios/Configuration/Release.local.xcconfig
+*.xcuserstate
+xcuserdata/
+*.xcresult/
+__pycache__/

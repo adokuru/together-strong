@@ -69,3 +69,9 @@ This starts a loopback-only test server on port 3191 with unique synthetic invit
 Before pushing public source, inspect `git diff --cached` and run `node scripts/check-public-source.mjs`. `.env*`, `.vercel`, test screenshots, logs, browser state and build artifacts are ignored. The secret scan supplements manual review; it is not a guarantee.
 
 General training reference: [ACSM resistance training guidance](https://acsm.org/resistance-training-guidelines-update-2026/).
+
+## Native iPhone application
+
+The Swift/UIKit project is in `ios/TogetherStrong.xcodeproj`. The initial milestone implements private sign-in, Keychain session restoration, workout loading and revision-protected preference sync, with account-scoped Core Data recovery. The existing Next.js backend now supports signed bearer sessions for the native client while retaining browser origin checks.
+
+See [the iOS setup and verification guide](ios/README.md) and [the mobile app plan](docs/MOBILE_APP_PLAN.md). API deployment, Apple signing, physical-device validation and TestFlight distribution are separate from local builds and simulator checks.

@@ -2,6 +2,7 @@ import { betterAuth, APIError } from "better-auth";
 import { nextCookies } from "better-auth/next-js";
 import { createAuthMiddleware } from "better-auth/api";
 import { magicLink } from "better-auth/plugins/magic-link";
+import { bearer } from "better-auth/plugins/bearer";
 import { db } from "./db";
 import { sendAuthMail } from "./mail";
 export function profileForEmail(email: string) {
@@ -56,6 +57,7 @@ const createAuth = () =>
       },
     },
     plugins: [
+      bearer({ requireSignature: true }),
       magicLink({
         expiresIn: 900,
         storeToken: "hashed",

@@ -1,6 +1,9 @@
 import { getAuth } from "@/lib/auth";
+import { validCredentials } from "@/lib/request-identity";
 export const runtime = "nodejs";
 export async function GET(request: Request) {
+  if (!validCredentials(request))
+    return Response.json({ error: "Invalid credentials" }, { status: 401 });
   if (!process.env.DATABASE_URL || !process.env.BETTER_AUTH_SECRET)
     return Response.json(
       { error: "Private access setup pending" },

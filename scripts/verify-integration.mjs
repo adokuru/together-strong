@@ -10,6 +10,7 @@ import {
   unlinkSync,
 } from "node:fs";
 import path from "node:path";
+import { verifyNativeHTTP, verifyIOS } from "./native-integration.mjs";
 if (
   process.env.RUN_DB_INTEGRATION !== "1" ||
   process.env.CONFIRM_TEST_DB !== "together-strong" ||
@@ -69,6 +70,7 @@ const server = spawn(
   },
 );
 let browser,
+  nativeToken,
   step = "server start";
 const passed = [];
 const ok = (label) => {
@@ -304,6 +306,28 @@ try {
     ).status(),
   ).toBe(403);
   ok("Cross-profile, stale-revision and cross-origin writes denied");
+  step = "native bearer security and workout sync";
+  nativeToken = await verifyNativeHTTP({
+    onStep: (label) => {
+      step = label;
+    },
+    base,
+    email: emails[0],
+    password,
+    cookie: (await david.context.cookies(base))
+      .map((item) => `${item.name}=${item.value}`)
+      .join("; "),
+  });
+  ok(
+    "Native signed bearer login, originless sync, conflict protection, isolation and logout; mixed/unsigned credentials denied",
+  );
+  if (process.env.RUN_IOS_INTEGRATION === "1") {
+    step = "Swift and UIKit simulator integration";
+    await verifyIOS({ base, emails, password, run });
+    ok(
+      "Swift URLSession/Keychain round-trip and UIKit sign-in, preference sync, relaunch and sign-out on iPhone simulator",
+    );
+  }
   step = "forgot password request";
   const resetContext = await browser.newContext(),
     resetPage = await resetContext.newPage();
@@ -364,6 +388,14 @@ try {
     ).status(),
   ).toBe(401);
   ok("Successful password reset revokes an existing independent session");
+  expect(
+    (
+      await fetch(base + "/api/account", {
+        headers: { Authorization: `Bearer ${nativeToken}` },
+      })
+    ).status,
+  ).toBe(401);
+  ok("Password reset revokes native bearer sessions too");
   expect(
     (
       await resetContext.request.post(base + "/api/auth/sign-in/email", {

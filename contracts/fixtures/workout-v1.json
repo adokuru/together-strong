@@ -1,0 +1,19 @@
+{
+  "data": {
+    "version": 1,
+    "rampSets": 2,
+    "startedAt": "2026-10-26T18:00:00.000Z",
+    "activeSessionId": "fixture-session",
+    "sessions": [{
+      "id": "fixture-session",
+      "date": "2026-10-26",
+      "startedAt": "2026-10-26T18:00:00.000Z",
+      "trainingStartedAt": "2026-10-26T18:01:00.000Z",
+      "completedAt": "2026-10-26T18:15:00.000Z",
+      "warmup": true,
+      "sets": {"press": [{"reps": "10", "kg": "12.50", "done": true}]}
+    }],
+    "futureMetadata": {"keep": true, "labels": ["synthetic", null, 3]}
+  },
+  "revision": 4
+}

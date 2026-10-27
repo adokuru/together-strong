@@ -1,4 +1,4 @@
-import { getAuth, profileForEmail } from "@/lib/auth";
+import { requestIdentity, validWriteOrigin } from "@/lib/request-identity";
 import { db } from "@/lib/db";
 import { emptyData, parseData } from "@/lib/workout";
 export const runtime = "nodejs";
@@ -8,15 +8,8 @@ const response = (body: unknown, status = 200) =>
     status,
     headers: { "Cache-Control": "private, no-store" },
   });
-async function identity(request: Request) {
-  if (!process.env.DATABASE_URL || !process.env.BETTER_AUTH_SECRET) return null;
-  const session = await getAuth().api.getSession({ headers: request.headers });
-  if (!session?.user.emailVerified) return null;
-  const profile = profileForEmail(session.user.email);
-  return profile ? { userId: session.user.id, profile } : null;
-}
 export async function GET(request: Request) {
-  const user = await identity(request);
+  const user = await requestIdentity(request);
   if (!user) return response({ error: "Unauthorized" }, 401);
   if (new URL(request.url).searchParams.get("profile") !== user.profile)
     return response({ error: "Forbidden" }, 403);
@@ -27,16 +20,9 @@ export async function GET(request: Request) {
   return response(rows[0] ?? { data: emptyData(), revision: 0 });
 }
 export async function PUT(request: Request) {
-  const origin = request.headers.get("origin");
-  let originHost;
-  try {
-    originHost = origin ? new URL(origin).host : null;
-  } catch {
+  if (!validWriteOrigin(request))
     return response({ error: "Invalid origin" }, 403);
-  }
-  if (!originHost || originHost !== request.headers.get("host"))
-    return response({ error: "Invalid origin" }, 403);
-  const user = await identity(request);
+  const user = await requestIdentity(request);
   if (!user) return response({ error: "Unauthorized" }, 401);
   const raw = await request.text();
   if (raw.length > 300000) return response({ error: "Too large" }, 413);

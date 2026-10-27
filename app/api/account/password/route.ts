@@ -1,16 +1,9 @@
-import { getAuth, profileForEmail } from "@/lib/auth";
+import { getAuth } from "@/lib/auth";
+import { requestIdentity, validWriteOrigin } from "@/lib/request-identity";
 export async function POST(request: Request) {
-  const origin = request.headers.get("origin");
-  try {
-    if (!origin || new URL(origin).host !== request.headers.get("host"))
-      return Response.json({ error: "Invalid origin" }, { status: 403 });
-  } catch {
+  if (!validWriteOrigin(request))
     return Response.json({ error: "Invalid origin" }, { status: 403 });
-  }
-  if (!process.env.DATABASE_URL || !process.env.BETTER_AUTH_SECRET)
-    return Response.json({ error: "Unauthorized" }, { status: 401 });
-  const session = await getAuth().api.getSession({ headers: request.headers });
-  if (!session?.user.emailVerified || !profileForEmail(session.user.email))
+  if (!(await requestIdentity(request)))
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   let body;
   try {
